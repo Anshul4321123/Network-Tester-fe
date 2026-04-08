@@ -1,16 +1,44 @@
-import { useState } from "react";
+// hooks/useSpeedTest.ts
+import { useState, useEffect, useRef } from "react";
 import type { TestPhase } from "../types/speedTestTypes";
 import {
   analyzeConnection,
   calculateScore,
-  generateInsights // ✅ IMPORT FROM UTILS
+  generateInsights,
+  analyzeByMode
 } from "../utils/connectionAnalyzer";
-import type { ConnectionReport } from "../utils/connectionAnalyzer";
-import { saveResult } from "../utils/storage";
+import type { ConnectionReport, TestMode } from "../utils/connectionAnalyzer";
+import {
+  saveResult,
+  saveBestScore,
+  saveBestStats
+} from "../utils/storage";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
+/*
+─────────────────────────────────────────
+CONFIG (COST OPTIMIZED)
+─────────────────────────────────────────
+*/
+const FULL_TEST_COOLDOWN = 10 * 60 * 1000;
+
+const PING_CHECK_INTERVAL = 5 * 60 * 1000;
+const FULL_TEST_INTERVAL  = 30 * 60 * 1000;
+
+// 🔥 cost reduced
+const DOWNLOAD_STREAMS = 4;
+const DOWNLOAD_DURATION = 5000;
+const UPLOAD_STREAMS = 3;
+const UPLOAD_DURATION = 5000;
+
 export default function useSpeedTest() {
+
+  /*
+  ─────────────────────────────────────────
+  STATE
+  ─────────────────────────────────────────
+  */
   const [phase, setPhase] = useState<TestPhase>("idle");
   const [ping, setPing] = useState<number | null>(null);
   const [download, setDownload] = useState<number | null>(null);
@@ -22,38 +50,126 @@ export default function useSpeedTest() {
 
   const [downloadHistory, setDownloadHistory] = useState<number[]>([]);
   const [uploadHistory, setUploadHistory] = useState<number[]>([]);
+  const [pingHistory, setPingHistory] = useState<number[]>([]);
+  const [jitterHistory, setJitterHistory] = useState<number[]>([]);
 
+  const [mode, setMode] = useState<TestMode>("gaming");
+  const [modeResult, setModeResult] = useState("");
+
+  const [bufferbloat, setBufferbloat] = useState<number | null>(null);
+  const [networkType, setNetworkType] = useState("unknown");
+
+  const [autoRun, setAutoRun] = useState(false);
+  const [monitorPing, setMonitorPing] = useState<number | null>(null);
+
+  /*
+  ─────────────────────────────────────────
+  REFS (NO STALE STATE BUGS)
+  ─────────────────────────────────────────
+  */
+  const runningRef = useRef(false);
+  const lastFullTestTimeRef = useRef(0);
+  const pingIntervalRef = useRef<number | null>(null);
+  const fullIntervalRef = useRef<number | null>(null);
   const [running, setRunning] = useState(false);
 
   /*
-  ----------------
-  PING TEST
-  ----------------
+  ─────────────────────────────────────────
+  NETWORK TYPE DETECTION
+  ─────────────────────────────────────────
   */
+  useEffect(() => {
+    const conn = (navigator as any)?.connection;
+    if (conn?.effectiveType) {
+      setNetworkType(conn.effectiveType);
+    }
+  }, []);
 
-  async function testPing(): Promise<{ ping: number; jitter: number }> {
-    const attempts = 10;
+  /*
+  ─────────────────────────────────────────
+  QUICK PING (CHEAP)
+  ─────────────────────────────────────────
+  */
+  async function quickCheck(): Promise<number> {
+    const start = performance.now();
+    try {
+      await fetch(`${BASE_URL}/ping`);
+      return parseFloat((performance.now() - start).toFixed(2));
+    } catch {
+      return -1;
+    }
+  }
+
+  /*
+  ─────────────────────────────────────────
+  SMART AUTO MONITORING
+  ─────────────────────────────────────────
+  */
+  useEffect(() => {
+
+    if (!autoRun) {
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (fullIntervalRef.current) clearInterval(fullIntervalRef.current);
+      pingIntervalRef.current = null;
+      fullIntervalRef.current = null;
+      return;
+    }
+
+    if (pingIntervalRef.current || fullIntervalRef.current) return;
+
+    // 🔹 Ping loop (cheap)
+    pingIntervalRef.current = window.setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+
+      const latency = await quickCheck();
+      setMonitorPing(latency);
+
+      // 🔥 smart trigger (only test when degraded)
+      if (latency > 150) {
+        runTest("auto");
+      }
+
+    }, PING_CHECK_INTERVAL);
+
+    // 🔹 Fallback full test
+    fullIntervalRef.current = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      runTest("auto");
+    }, FULL_TEST_INTERVAL);
+
+    return () => {
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (fullIntervalRef.current) clearInterval(fullIntervalRef.current);
+    };
+
+  }, [autoRun]);
+
+  /*
+  ─────────────────────────────────────────
+  PING TEST
+  ─────────────────────────────────────────
+  */
+  async function testPing() {
     const values: number[] = [];
 
-    for (let i = 0; i < attempts; i++) {
+    for (let i = 0; i < 8; i++) {
       const start = performance.now();
       await fetch(`${BASE_URL}/ping`);
       const latency = performance.now() - start;
       values.push(latency);
+      setPingHistory(prev => [...prev.slice(-40), latency]);
     }
 
-    const avg = values.reduce((a, b) => a + b, 0) / attempts;
-    const pingValue = parseFloat(avg.toFixed(2));
-
-    const diffs: number[] = [];
-    for (let i = 1; i < values.length; i++) {
-      diffs.push(Math.abs(values[i] - values[i - 1]));
-    }
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const pingValue = +avg.toFixed(2);
 
     const jitterValue =
-      diffs.reduce((a, b) => a + b, 0) / diffs.length;
+      values.slice(1).reduce((sum, v, i) =>
+        sum + Math.abs(v - values[i]), 0
+      ) / (values.length - 1);
 
-    const finalJitter = parseFloat(jitterValue.toFixed(2));
+    const finalJitter = +jitterValue.toFixed(2);
+    setJitterHistory(prev => [...prev.slice(-40), finalJitter]);
 
     setPing(pingValue);
     setJitter(finalJitter);
@@ -62,167 +178,208 @@ export default function useSpeedTest() {
   }
 
   /*
-  ----------------
-  DOWNLOAD TEST
-  ----------------
+  ─────────────────────────────────────────
+  DOWNLOAD TEST (OPTIMIZED)
+  ─────────────────────────────────────────
   */
-
-  async function testDownload(): Promise<number> {
-    const streams = 8;
-    const duration = 7000;
-
+  async function testDownload(basePing: number) {
     const startTime = performance.now();
     const controller = new AbortController();
-    setTimeout(() => controller.abort(), duration);
+    setTimeout(() => controller.abort(), DOWNLOAD_DURATION);
 
-    const workerBytes = new Array(streams).fill(0);
+    let totalBytes = 0;
+    const pingDuringLoad: number[] = [];
 
-    async function worker(index: number) {
+    const interval = setInterval(async () => {
+      const start = performance.now();
       try {
-        const response = await fetch(
-          `${BASE_URL}/download?duration=10000`,
-          { signal: controller.signal }
-        );
+        await fetch(`${BASE_URL}/ping`);
+        pingDuringLoad.push(performance.now() - start);
+      } catch {}
+    }, 500);
 
-        const reader = response.body?.getReader();
+    async function worker() {
+      try {
+        const res = await fetch(`${BASE_URL}/download`, {
+          signal: controller.signal
+        });
+
+        const reader = res.body?.getReader();
         if (!reader) return;
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          workerBytes[index] += value.length;
+          totalBytes += value.length;
 
-          const totalBytes = workerBytes.reduce((a, b) => a + b, 0);
           const elapsed = (performance.now() - startTime) / 1000;
+          const mbps = (totalBytes * 8) / (elapsed * 1024 * 1024);
 
-          const mbps =
-            (totalBytes * 8) / (elapsed * 1024 * 1024);
-
-          setDownloadHistory(prev => [
-            ...prev.slice(-40),
-            mbps
-          ]);
+          setDownloadHistory(prev => [...prev.slice(-40), mbps]);
         }
+
       } catch {}
     }
 
-    await Promise.all(workerBytes.map((_, i) => worker(i)));
+    await Promise.all(Array.from({ length: DOWNLOAD_STREAMS }, worker));
+    clearInterval(interval);
 
-    const totalBytes = workerBytes.reduce((a, b) => a + b, 0);
+    if (pingDuringLoad.length) {
+      const avg = pingDuringLoad.reduce((a, b) => a + b, 0) / pingDuringLoad.length;
+      setBufferbloat(+(avg - basePing).toFixed(2));
+    }
 
-    const speed =
-      (totalBytes * 8) / ((duration / 1000) * 1024 * 1024);
+    const speed = (totalBytes * 8) / ((DOWNLOAD_DURATION / 1000) * 1024 * 1024);
+    const final = +speed.toFixed(2);
 
-    const final = parseFloat(speed.toFixed(2));
     setDownload(final);
     return final;
   }
 
   /*
-  ----------------
-  UPLOAD TEST
-  ----------------
+  ─────────────────────────────────────────
+  UPLOAD TEST (OPTIMIZED)
+  ─────────────────────────────────────────
   */
-
-  async function testUpload(): Promise<number> {
-    const streams = 4;
-    const duration = 7000;
-    const warmup = 2000;
-
-    const chunkSize = 256 * 1024;
-    const payload = new Uint8Array(chunkSize);
-
+  async function testUpload() {
+    const payload = new Uint8Array(128 * 1024);
     let totalBytes = 0;
     const startTime = performance.now();
 
     async function worker() {
-      while (true) {
-        const now = performance.now();
-        if (now - startTime > duration) break;
-
+      while (performance.now() - startTime < UPLOAD_DURATION) {
         await fetch(`${BASE_URL}/upload`, {
           method: "POST",
-          body: payload,
-          headers: {
-            "Content-Type": "application/octet-stream"
-          }
+          body: payload
         });
 
-        const elapsed = performance.now() - startTime;
+        totalBytes += payload.length;
 
-        if (elapsed > warmup && elapsed < duration) {
-          totalBytes += chunkSize;
+        const elapsed = (performance.now() - startTime) / 1000;
+        const mbps = (totalBytes * 8) / (elapsed * 1024 * 1024);
 
-          const mbps =
-            (totalBytes * 8) /
-            ((elapsed / 1000) * 1024 * 1024);
-
-          setUploadHistory(prev => [
-            ...prev.slice(-40),
-            mbps
-          ]);
-        }
+        setUploadHistory(prev => [...prev.slice(-40), mbps]);
       }
     }
 
-    await Promise.all(Array.from({ length: streams }, worker));
+    await Promise.all(Array.from({ length: UPLOAD_STREAMS }, worker));
 
-    const speed =
-      (totalBytes * 8) /
-      (((duration - warmup) / 1000) * 1024 * 1024);
+    const speed = (totalBytes * 8) / ((UPLOAD_DURATION / 1000) * 1024 * 1024);
+    const final = +speed.toFixed(2);
 
-    const final = parseFloat(speed.toFixed(2));
     setUpload(final);
     return final;
   }
 
   /*
-  ----------------
-  RUN TEST
-  ----------------
+  ─────────────────────────────────────────
+  MAIN TEST RUNNER
+  source: "manual" | "auto"
+  ─────────────────────────────────────────
   */
+  async function runTest(source: "manual" | "auto" = "manual", selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean }) {
+    if (runningRef.current) return;
 
-  async function runTest() {
-    if (running) return;
+    const now = Date.now();
 
+    if (source === "auto" && now - lastFullTestTimeRef.current < FULL_TEST_COOLDOWN) return;
+
+    lastFullTestTimeRef.current = now;
+
+    runningRef.current = true;
     setRunning(true);
-    setReport(null);
-    setInsights([]);
 
+    // Reset histories
     setDownloadHistory([]);
     setUploadHistory([]);
+    setPingHistory([]);
+    setJitterHistory([]);
+    setBufferbloat(null);
+    
+    // Reset values that will be tested
+    if (selection?.ping === false) {
+      setPing(null);
+    }
+    if (selection?.jitter === false) {
+      setJitter(null);
+    }
+    if (selection?.download === false) {
+      setDownload(null);
+    }
+    if (selection?.upload === false) {
+      setUpload(null);
+    }
 
-    setPhase("ping");
-    const { ping: p, jitter: j } = await testPing();
+    // Default values if tests are skipped
+    let p: number = 0;
+    let j: number = 0;
+    let d: number = 0;
+    let u: number = 0;
 
-    setPhase("download");
-    const d = await testDownload();
+    // Run ping test if selected (or if no selection provided, run all)
+    const shouldRunPing = selection === undefined || selection.ping !== false;
+    if (shouldRunPing) {
+      setPhase("ping");
+      const pingResult = await testPing();
+      p = pingResult.ping;
+      j = pingResult.jitter;
+    } else {
+      // Keep existing values or set to 0
+      p = ping ?? 0;
+      j = jitter ?? 0;
+    }
 
-    setPhase("upload");
-    const u = await testUpload();
+    // Run download test if selected
+    const shouldRunDownload = selection === undefined || selection.download !== false;
+    if (shouldRunDownload) {
+      setPhase("download");
+      d = await testDownload(p);
+    } else {
+      d = download ?? 0;
+    }
+
+    // Run upload test if selected
+    const shouldRunUpload = selection === undefined || selection.upload !== false;
+    if (shouldRunUpload) {
+      setPhase("upload");
+      u = await testUpload();
+    } else {
+      u = upload ?? 0;
+    }
 
     setPhase("analyzing");
 
+    // All functions now receive numbers (not null)
     const result = analyzeConnection(p, d, u);
     const scoreValue = calculateScore(p, d, u);
-    const insightList = generateInsights(p, d, u); // ✅ FROM UTILS
+    const insightList = generateInsights(p, d, u);
+    const modeOutput = analyzeByMode(mode, p, j, d, u);
 
     setReport(result);
     setScore(scoreValue);
     setInsights(insightList);
+    setModeResult(modeOutput);
 
     setPhase("complete");
+
+    runningRef.current = false;
     setRunning(false);
 
-    saveResult({
-      date: new Date().toLocaleString(),
-      ping: p,
-      jitter: j,
-      download: d,
-      upload: u,
-      score: scoreValue
-    });
+    // Only save if we have actual data
+    if (shouldRunPing || shouldRunDownload || shouldRunUpload) {
+      saveResult({
+        date: new Date().toLocaleString(),
+        ping: p,
+        jitter: j,
+        download: d,
+        upload: u,
+        score: scoreValue
+      });
+
+      saveBestScore(scoreValue);
+      saveBestStats(scoreValue, d, u, p);
+    }
   }
 
   return {
@@ -231,12 +388,22 @@ export default function useSpeedTest() {
     upload,
     jitter,
     score,
-    insights, // ✅ IMPORTANT
+    insights,
     downloadHistory,
     uploadHistory,
-    running,
+    pingHistory,
+    jitterHistory,
     phase,
     report,
-    runTest
+    runTest,
+    mode,
+    setMode,
+    modeResult,
+    bufferbloat,
+    networkType,
+    autoRun,
+    setAutoRun,
+    monitorPing,
+    running
   };
 }

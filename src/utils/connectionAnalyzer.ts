@@ -5,6 +5,9 @@ export interface ConnectionReport {
   videoCalls: string;
 }
 
+// ✅ STEP 1 — MODE TYPE
+export type TestMode = "gaming" | "streaming" | "work";
+
 export function analyzeConnection(
   ping: number,
   download: number,
@@ -45,7 +48,7 @@ export function analyzeConnection(
 }
 
 /*
-🧠 HUMAN INSIGHTS (NEW)
+🧠 HUMAN INSIGHTS
 */
 export function generateInsights(
   ping: number,
@@ -87,7 +90,7 @@ export function generateInsights(
 }
 
 /*
-🔥 SCORE (UNCHANGED BUT CLEANED)
+🔥 SCORE
 */
 export function calculateScore(
   ping: number,
@@ -104,4 +107,40 @@ export function calculateScore(
            ping < 50 ? 30 : 15;
 
   return Math.round(score);
+}
+
+// ✅ STEP 1 — MODE-BASED ANALYSIS
+export function analyzeByMode(
+  mode: TestMode,
+  ping: number,
+  jitter: number,
+  download: number,
+  upload: number
+): string {
+
+  switch (mode) {
+
+    case "gaming":
+      if (ping < 30 && jitter < 10)
+        return "🎮 Great for gaming";
+      else
+        return "⚠️ You may experience lag";
+
+    case "streaming":
+      if (download >= 25)
+        return "📺 Perfect for 4K streaming";
+      else if (download >= 10)
+        return "📺 Good for HD streaming";
+      else
+        return "❌ Streaming may buffer";
+
+    case "work":
+      if (upload >= 10 && ping < 50)
+        return "💼 Great for meetings & work";
+      else
+        return "⚠️ Calls may lag";
+
+    default:
+      return "";
+  }
 }
