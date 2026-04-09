@@ -1,26 +1,51 @@
-// Home.tsx - Update the LiveGraphPopup props
+// Home.tsx - Complete with Shareable Result Card
 import { useEffect, useState } from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
 import Insights from "../components/Insights";
 import AdvancedDetails from "../components/AdvancedDetails";
 import LiveGraphPopup from "../components/LiveGraphPopup";
-import { getHistory, getBestScore, getBestStats, saveTestSelection, loadTestSelection, type SpeedTestRecord, type BestStats } from "../utils/storage";
+import CelebrationPopup from "../components/CelebrationPopup";
+import NetworkInfo from "../components/NetworkInfo";
+import ShareableResultCard from "../components/ShareableResultCard";
+import { 
+  getHistory, 
+  getBestScore, 
+  getBestStats, 
+  saveTestSelection, 
+  loadTestSelection, 
+  getAchievements,
+  updateAchievement,
+  type SpeedTestRecord, 
+  type BestStats,
+  type Achievements 
+} from "../utils/storage";
+
+interface RecordBreak {
+  type: "download" | "upload" | "ping" | "score";
+  oldValue: number;
+  newValue: number;
+}
 
 export default function Home() {
   const [history, setHistory] = useState<SpeedTestRecord[]>(getHistory());
   const [bestScore, setBestScore] = useState<number | null>(getBestScore());
   const [bestStats, setBestStats] = useState<BestStats | null>(getBestStats());
+  const [achievements, setAchievements] = useState<Achievements>(getAchievements());
   const [isTabVisible, setIsTabVisible] = useState(true);
   const [showLiveGraph, setShowLiveGraph] = useState(true);
   const [showGraphPopup, setShowGraphPopup] = useState(false);
   const [testSelection, setTestSelection] = useState(() => loadTestSelection());
-  const [networkInfo, setNetworkInfo] = useState({
-    type: "unknown",
-    effectiveType: "unknown",
-    downlink: null as number | null,
-    rtt: null as number | null,
-  });
+  const [testCompleted, setTestCompleted] = useState(0);
+  const [showShareCard, setShowShareCard] = useState(false);
+  
+  // Celebration state - Updated to support multiple records
+  const [celebration, setCelebration] = useState<{
+    show: boolean;
+    records: RecordBreak[];
+    isFirstTime?: boolean;
+    firstTimeType?: "ping" | "jitter" | "download" | "upload" | "score";
+  } | null>(null);
 
   const {
     ping,
@@ -47,19 +72,6 @@ export default function Home() {
     monitorPing,
   } = useSpeedTest();
 
-  // Detect network information
-  useEffect(() => {
-    const connection = (navigator as any).connection;
-    if (connection) {
-      setNetworkInfo({
-        type: connection.type || "unknown",
-        effectiveType: connection.effectiveType || "unknown",
-        downlink: connection.downlink || null,
-        rtt: connection.rtt || null,
-      });
-    }
-  }, []);
-
   // Track tab visibility
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -76,10 +88,116 @@ export default function Home() {
     }
   }, [running, phase, showLiveGraph]);
 
+  // Track test completion for network refresh
+  useEffect(() => {
+    if (phase === "complete") {
+      setTestCompleted(prev => prev + 1);
+    }
+  }, [phase]);
+
   // Save test selection to localStorage whenever it changes
   useEffect(() => {
     saveTestSelection(testSelection);
   }, [testSelection]);
+
+  // Check for first-time achievements and new records when test completes
+  useEffect(() => {
+    if (phase === "complete" && score !== null && download !== null && upload !== null && ping !== null) {
+      const brokenRecords: RecordBreak[] = [];
+      
+      // Check for first-time achievements (priority)
+      if (!achievements.hasRunPing && ping > 0) {
+        updateAchievement("ping");
+        setAchievements(getAchievements());
+        setCelebration({
+          show: true,
+          records: [{ type: "ping", oldValue: ping, newValue: ping }],
+          isFirstTime: true,
+          firstTimeType: "ping",
+        });
+        return;
+      }
+      else if (!achievements.hasRunJitter && jitter !== null && jitter > 0) {
+        updateAchievement("jitter");
+        setAchievements(getAchievements());
+        setCelebration({
+          show: true,
+          records: [{ type: "ping", oldValue: jitter, newValue: jitter }],
+          isFirstTime: true,
+          firstTimeType: "jitter",
+        });
+        return;
+      }
+      else if (!achievements.hasRunDownload && download > 0) {
+        updateAchievement("download");
+        setAchievements(getAchievements());
+        setCelebration({
+          show: true,
+          records: [{ type: "download", oldValue: download, newValue: download }],
+          isFirstTime: true,
+          firstTimeType: "download",
+        });
+        return;
+      }
+      else if (!achievements.hasRunUpload && upload > 0) {
+        updateAchievement("upload");
+        setAchievements(getAchievements());
+        setCelebration({
+          show: true,
+          records: [{ type: "upload", oldValue: upload, newValue: upload }],
+          isFirstTime: true,
+          firstTimeType: "upload",
+        });
+        return;
+      }
+      
+      // Check for new records (only if not first time)
+      // Check for new best score
+      if (bestScore !== null && score > bestScore) {
+        brokenRecords.push({
+          type: "score",
+          oldValue: bestScore,
+          newValue: score,
+        });
+      }
+      
+      // Check for new best download
+      if (bestStats && download > bestStats.bestDownload) {
+        brokenRecords.push({
+          type: "download",
+          oldValue: bestStats.bestDownload,
+          newValue: download,
+        });
+      }
+      
+      // Check for new best upload
+      if (bestStats && upload > bestStats.bestUpload) {
+        brokenRecords.push({
+          type: "upload",
+          oldValue: bestStats.bestUpload,
+          newValue: upload,
+        });
+      }
+      
+      // Check for new best ping (lower is better)
+      if (bestStats && ping < bestStats.bestPing) {
+        brokenRecords.push({
+          type: "ping",
+          oldValue: bestStats.bestPing,
+          newValue: ping,
+        });
+      }
+      
+      // Show celebration if any records were broken
+      if (brokenRecords.length > 0) {
+        setCelebration({
+          show: true,
+          records: brokenRecords,
+          isFirstTime: false,
+        });
+      }
+    }
+  }, [phase, score, download, upload, ping, jitter, bestScore, bestStats, achievements]);
 
   // Update best stats when test completes
   useEffect(() => {
@@ -99,6 +217,7 @@ export default function Home() {
       setHistory(newHistory);
       setBestScore(getBestScore());
       setBestStats(getBestStats());
+      setAchievements(getAchievements());
     }, 1500);
     return () => clearInterval(interval);
   }, []);
@@ -113,26 +232,6 @@ export default function Home() {
   // Custom test runner that respects selection
   const handleRunTest = () => {
     runTest("manual", testSelection);
-  };
-
-  // Get network recommendation
-  const getNetworkRecommendation = () => {
-    if (networkInfo.effectiveType === "4g") {
-      return "✅ 4G detected - Good for streaming & video calls";
-    }
-    if (networkInfo.effectiveType === "3g") {
-      return "⚠️ 3G detected - May struggle with HD video";
-    }
-    if (networkInfo.effectiveType === "2g") {
-      return "❌ 2G detected - Very slow, only basic browsing";
-    }
-    if (networkInfo.downlink && networkInfo.downlink > 50) {
-      return "🚀 Excellent WiFi - Great for 4K streaming & gaming";
-    }
-    if (networkInfo.downlink && networkInfo.downlink > 20) {
-      return "👍 Good WiFi - Suitable for HD streaming";
-    }
-    return "📡 Connected - Run a test to check your speed";
   };
 
   // Background based on test state
@@ -161,7 +260,7 @@ export default function Home() {
           fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
           display: "flex",
           flexDirection: "column",
-          gap: "16px",
+          gap: "12px",
         }}
       >
         {/* Best Stats Banner - Always visible */}
@@ -169,37 +268,37 @@ export default function Home() {
           <div
             style={{
               background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
-              borderRadius: "16px",
-              padding: "12px 16px",
+              borderRadius: "14px",
+              padding: "10px 14px",
               textAlign: "center",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
             }}
           >
-            <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "8px", letterSpacing: "1px" }}>
+            <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "6px", letterSpacing: "1px" }}>
               ALL TIME BEST
             </div>
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(3, 1fr)",
-                gap: "12px",
+                gap: "8px",
               }}
             >
               <div>
-                <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>⚡ FASTEST DOWNLOAD</div>
-                <div style={{ fontSize: "16px", fontWeight: "bold", color: "#fbbf24" }}>
+                <div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "2px" }}>⚡ DOWNLOAD</div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", color: "#fbbf24" }}>
                   {formatSpeed(bestStats.bestDownload)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>🚀 FASTEST UPLOAD</div>
-                <div style={{ fontSize: "16px", fontWeight: "bold", color: "#fbbf24" }}>
+                <div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "2px" }}>🚀 UPLOAD</div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", color: "#fbbf24" }}>
                   {formatSpeed(bestStats.bestUpload)}
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "2px" }}>📡 BEST PING</div>
-                <div style={{ fontSize: "16px", fontWeight: "bold", color: "#fbbf24" }}>
+                <div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "2px" }}>📡 PING</div>
+                <div style={{ fontSize: "14px", fontWeight: "bold", color: "#fbbf24" }}>
                   {bestStats.bestPing.toFixed(2)} ms
                 </div>
               </div>
@@ -207,99 +306,13 @@ export default function Home() {
           </div>
         )}
 
-        {/* Network Information Banner */}
-        <div
-          style={{
-            background: "rgba(59,130,246,0.1)",
-            borderRadius: "16px",
-            padding: "12px 16px",
-            border: "1px solid rgba(59,130,246,0.2)",
+        {/* Enhanced Network Information Component */}
+        <NetworkInfo 
+          triggerRefresh={testCompleted}
+          onNetworkDetected={(type) => {
+            console.log("Network type:", type);
           }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-            <span style={{ fontSize: "16px" }}>📶</span>
-            <span style={{ fontSize: "13px", fontWeight: "600", color: "#1e293b" }}>
-              Network: {networkInfo.effectiveType?.toUpperCase() || "Unknown"}
-              {networkInfo.type && networkInfo.type !== "unknown" && ` (${networkInfo.type})`}
-            </span>
-            {networkInfo.downlink && (
-              <span style={{ fontSize: "11px", color: "#64748b", marginLeft: "auto" }}>
-                📡 {networkInfo.downlink} Mbps
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: "11px", color: "#475569" }}>
-            {getNetworkRecommendation()}
-          </div>
-        </div>
-
-        {/* Test Selection Dropdown with localStorage persistence */}
-        <div
-          style={{
-            background: "rgba(255,255,255,0.95)",
-            borderRadius: "16px",
-            padding: "12px 16px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          }}
-        >
-          <details>
-            <summary
-              style={{
-                fontSize: "13px",
-                fontWeight: "600",
-                color: "#475569",
-                cursor: "pointer",
-                userSelect: "none",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <span>🎯 Select Tests to Run</span>
-              <span style={{ fontSize: "10px", color: "#94a3b8" }}>
-                {Object.values(testSelection).filter(Boolean).length} selected
-              </span>
-            </summary>
-            <div style={{ marginTop: "12px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={testSelection.ping}
-                  onChange={(e) => setTestSelection({ ...testSelection, ping: e.target.checked })}
-                  disabled={running}
-                />
-                📡 Ping
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={testSelection.jitter}
-                  onChange={(e) => setTestSelection({ ...testSelection, jitter: e.target.checked })}
-                  disabled={running}
-                />
-                ⚡ Jitter
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={testSelection.download}
-                  onChange={(e) => setTestSelection({ ...testSelection, download: e.target.checked })}
-                  disabled={running}
-                />
-                ⬇️ Download
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
-                <input
-                  type="checkbox"
-                  checked={testSelection.upload}
-                  onChange={(e) => setTestSelection({ ...testSelection, upload: e.target.checked })}
-                  disabled={running}
-                />
-                ⬆️ Upload
-              </label>
-            </div>
-          </details>
-        </div>
+        />
 
         {/* SECTION 1: HERO */}
         <Hero
@@ -315,9 +328,43 @@ export default function Home() {
           mode={mode}
           onModeChange={setMode}
           testSelection={testSelection}
+          setTestSelection={setTestSelection}
           showLiveGraph={showLiveGraph}
           onToggleLiveGraph={() => setShowLiveGraph(!showLiveGraph)}
         />
+
+        {/* Share Button - Shows after test completes */}
+{!isTestActive && score !== null && (
+  <button
+    onClick={() => setShowShareCard(true)}
+    style={{
+      padding: "12px 20px",
+      background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
+      border: "none",
+      borderRadius: "40px",
+      color: "#fff",
+      cursor: "pointer",
+      fontSize: "14px",
+      fontWeight: "600",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "8px",
+      width: "100%",
+      transition: "all 0.2s",
+      boxShadow: "0 4px 12px rgba(139,92,246,0.3)",
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.transform = "scale(1.02)";
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.transform = "scale(1)";
+    }}
+  >
+    <span>📤</span>
+    Share Your Result
+  </button>
+)}
 
         {/* SECTION 2: INSIGHTS */}
         {!isTestActive && (insights.length > 0 || modeResult || report) && (
@@ -343,7 +390,7 @@ export default function Home() {
           phase={phase}
         />
 
-        {/* Live Graph Popup - Now includes Ping and Jitter graphs */}
+        {/* Live Graph Popup */}
         <LiveGraphPopup
           isOpen={showGraphPopup}
           onClose={() => setShowGraphPopup(false)}
@@ -359,18 +406,38 @@ export default function Home() {
           running={running}
           testSelection={testSelection}
         />
+
+        {/* Celebration Popup - User must click to close, supports multiple records */}
+        {celebration && (
+          <CelebrationPopup
+            isOpen={celebration.show}
+            onClose={() => setCelebration(null)}
+            records={celebration.records}
+            isFirstTime={celebration.isFirstTime}
+            firstTimeType={celebration.firstTimeType}
+          />
+        )}
+
+        {/* Shareable Result Card */}
+        {showShareCard && (
+          <ShareableResultCard
+            score={score}
+            ping={ping}
+            download={download}
+            upload={upload}
+            jitter={jitter}
+            networkType={networkType}
+            mode={mode}
+            modeResult={modeResult}
+            onClose={() => setShowShareCard(false)}
+          />
+        )}
       </div>
 
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.6; }
-        }
-        details > summary {
-          list-style: none;
-        }
-        details > summary::-webkit-details-marker {
-          display: none;
         }
       `}</style>
     </div>

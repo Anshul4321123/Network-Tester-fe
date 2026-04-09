@@ -1,4 +1,4 @@
-// utils/storage.ts
+// utils/storage.ts - Add first-time achievement tracking
 export interface SpeedTestRecord {
   date: string;
   ping: number;
@@ -22,10 +22,19 @@ export interface TestSelection {
   upload: boolean;
 }
 
+export interface Achievements {
+  hasRunPing: boolean;
+  hasRunJitter: boolean;
+  hasRunDownload: boolean;
+  hasRunUpload: boolean;
+  hasRunFullTest: boolean;
+}
+
 const KEY = "speed_test_history";
 const BEST_SCORE_KEY = "bestScore";
 const BEST_STATS_KEY = "bestStats";
 const TEST_SELECTION_KEY = "test_selection";
+const ACHIEVEMENTS_KEY = "achievements";
 
 export function saveResult(record: SpeedTestRecord) {
   const existing = JSON.parse(localStorage.getItem(KEY) || "[]");
@@ -80,11 +89,52 @@ export function loadTestSelection(): TestSelection {
   if (saved) {
     return JSON.parse(saved);
   }
-  // Default: all tests selected
   return {
     ping: true,
     jitter: true,
     download: true,
     upload: true,
   };
+}
+
+// Achievements tracking
+export function getAchievements(): Achievements {
+  const saved = localStorage.getItem(ACHIEVEMENTS_KEY);
+  if (saved) {
+    return JSON.parse(saved);
+  }
+  return {
+    hasRunPing: false,
+    hasRunJitter: false,
+    hasRunDownload: false,
+    hasRunUpload: false,
+    hasRunFullTest: false,
+  };
+}
+
+export function saveAchievements(achievements: Achievements) {
+  localStorage.setItem(ACHIEVEMENTS_KEY, JSON.stringify(achievements));
+}
+
+export function updateAchievement(type: "ping" | "jitter" | "download" | "upload" | "full") {
+  const achievements = getAchievements();
+  switch (type) {
+    case "ping":
+      achievements.hasRunPing = true;
+      break;
+    case "jitter":
+      achievements.hasRunJitter = true;
+      break;
+    case "download":
+      achievements.hasRunDownload = true;
+      break;
+    case "upload":
+      achievements.hasRunUpload = true;
+      break;
+    case "full":
+      achievements.hasRunFullTest = true;
+      break;
+  }
+  saveAchievements(achievements);
+  return achievements;
 }

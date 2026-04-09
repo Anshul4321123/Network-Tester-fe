@@ -1,3 +1,4 @@
+// utils/connectionAnalyzer.ts
 export interface ConnectionReport {
   quality: string;
   streaming: string;
@@ -5,8 +6,19 @@ export interface ConnectionReport {
   videoCalls: string;
 }
 
-// ✅ STEP 1 — MODE TYPE
 export type TestMode = "gaming" | "streaming" | "work";
+
+export interface ScoreBreakdown {
+  downloadScore: number;
+  uploadScore: number;
+  pingScore: number;
+  totalScore: number;
+  details: {
+    download: string;
+    upload: string;
+    ping: string;
+  };
+}
 
 export function analyzeConnection(
   ping: number,
@@ -47,9 +59,6 @@ export function analyzeConnection(
   };
 }
 
-/*
-🧠 HUMAN INSIGHTS
-*/
 export function generateInsights(
   ping: number,
   download: number,
@@ -89,27 +98,87 @@ export function generateInsights(
   return insights;
 }
 
-/*
-🔥 SCORE
-*/
 export function calculateScore(
   ping: number,
   download: number,
   upload: number
 ): number {
-
   let score = 0;
-
   score += Math.min(download / 100, 1) * 40;
   score += Math.min(upload / 50, 1) * 20;
-
-  score += ping < 20 ? 40 :
-           ping < 50 ? 30 : 15;
-
+  score += ping < 20 ? 40 : ping < 50 ? 30 : 15;
   return Math.round(score);
 }
 
-// ✅ STEP 1 — MODE-BASED ANALYSIS
+// Get detailed score breakdown with explanations
+export function getScoreBreakdown(
+  ping: number,
+  download: number,
+  upload: number
+): ScoreBreakdown {
+  // Download score (max 40 points)
+  let downloadScore = Math.min(download / 100, 1) * 40;
+  let downloadDetails = "";
+  
+  if (download >= 100) {
+    downloadDetails = `✅ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (excellent, max bonus)`;
+  } else if (download >= 50) {
+    downloadDetails = `✅ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (good)`;
+  } else if (download >= 25) {
+    downloadDetails = `👍 +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (decent)`;
+  } else if (download >= 10) {
+    downloadDetails = `⚠️ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (average)`;
+  } else {
+    downloadDetails = `❌ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (slow, max 40 points needs 100+ Mbps)`;
+  }
+
+  // Upload score (max 20 points)
+  let uploadScore = Math.min(upload / 50, 1) * 20;
+  let uploadDetails = "";
+  
+  if (upload >= 50) {
+    uploadDetails = `✅ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (excellent, max bonus)`;
+  } else if (upload >= 25) {
+    uploadDetails = `✅ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (great)`;
+  } else if (upload >= 10) {
+    uploadDetails = `👍 +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (good for video calls)`;
+  } else if (upload >= 5) {
+    uploadDetails = `⚠️ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (adequate)`;
+  } else {
+    uploadDetails = `❌ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (slow, max 20 points needs 50+ Mbps)`;
+  }
+
+  // Ping score (max 40 points)
+  let pingScore = 0;
+  let pingDetails = "";
+  
+  if (ping < 20) {
+    pingScore = 40;
+    pingDetails = `✅ +40 points: Ping ${ping.toFixed(0)} ms (excellent for gaming)`;
+  } else if (ping < 50) {
+    pingScore = 30;
+    pingDetails = `👍 +30 points: Ping ${ping.toFixed(0)} ms (good for most games)`;
+  } else {
+    pingScore = 15;
+    pingDetails = `⚠️ +15 points: Ping ${ping.toFixed(0)} ms (may cause lag in games)`;
+  }
+
+  const totalScore = downloadScore + uploadScore + pingScore;
+
+  return {
+    downloadScore: Math.round(downloadScore),
+    uploadScore: Math.round(uploadScore),
+    pingScore: Math.round(pingScore),
+    totalScore: Math.round(totalScore),
+    details: {
+      download: downloadDetails,
+      upload: uploadDetails,
+      ping: pingDetails,
+    },
+  };
+}
+
+// Updated mode-based analysis with better thresholds
 export function analyzeByMode(
   mode: TestMode,
   ping: number,
@@ -119,28 +188,80 @@ export function analyzeByMode(
 ): string {
 
   switch (mode) {
-
     case "gaming":
-      if (ping < 30 && jitter < 10)
-        return "🎮 Great for gaming";
+      // More realistic thresholds for gaming
+      if (ping < 30 && jitter < 20)  // Increased jitter threshold from 10 to 20
+        return "🎮 Excellent for gaming! Low latency & stable connection.";
+      else if (ping < 50 && jitter < 30)
+        return "👍 Good for gaming. May have occasional hiccups.";
+      else if (ping < 80)
+        return "⚠️ Playable but may experience lag. Consider using ethernet.";
       else
-        return "⚠️ You may experience lag";
+        return "❌ High latency - not recommended for competitive gaming.";
 
     case "streaming":
-      if (download >= 25)
-        return "📺 Perfect for 4K streaming";
+      if (download >= 50)
+        return "📺 Perfect for 4K/8K streaming on multiple devices!";
+      else if (download >= 25)
+        return "📺 Great for 4K streaming on 1-2 devices.";
       else if (download >= 10)
-        return "📺 Good for HD streaming";
+        return "📺 Good for HD (1080p) streaming.";
+      else if (download >= 5)
+        return "📺 Suitable for 720p streaming.";
       else
-        return "❌ Streaming may buffer";
+        return "❌ Streaming may buffer frequently. Consider upgrading.";
 
     case "work":
-      if (upload >= 10 && ping < 50)
-        return "💼 Great for meetings & work";
+      if (upload >= 20 && ping < 50)
+        return "💼 Excellent for video conferencing & large file sharing!";
+      else if (upload >= 10 && ping < 80)
+        return "💼 Great for Zoom/Teams calls & file sharing.";
+      else if (upload >= 5)
+        return "💼 Adequate for voice calls and emails.";
       else
-        return "⚠️ Calls may lag";
+        return "⚠️ Video calls may be unstable. Check your upload speed.";
 
     default:
       return "";
   }
+}
+
+// New function: Get explanation for score on hover/click
+export function getScoreExplanation(
+  ping: number,
+  download: number,
+  upload: number,
+  score: number
+): string {
+  const breakdown = getScoreBreakdown(ping, download, upload);
+  
+  let explanation = `🏆 Score: ${score}/100\n\n`;
+  explanation += `How your score was calculated:\n`;
+  explanation += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+  explanation += `📊 DOWNLOAD SPEED (40% of score)\n`;
+  explanation += `${breakdown.details.download}\n`;
+  explanation += `💡 100+ Mbps = full 40 points\n\n`;
+  
+  explanation += `📤 UPLOAD SPEED (20% of score)\n`;
+  explanation += `${breakdown.details.upload}\n`;
+  explanation += `💡 50+ Mbps = full 20 points\n\n`;
+  
+  explanation += `📡 PING LATENCY (40% of score)\n`;
+  explanation += `${breakdown.details.ping}\n`;
+  explanation += `💡 Under 20ms = full 40 points\n\n`;
+  
+  explanation += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  explanation += `✨ TOTAL SCORE: ${breakdown.totalScore}/100\n`;
+  
+  if (score >= 90) {
+    explanation += `🎉 Excellent! Your connection is top-tier!`;
+  } else if (score >= 70) {
+    explanation += `👍 Good! You have a solid connection.`;
+  } else if (score >= 50) {
+    explanation += `⚠️ Fair! Some improvements possible.`;
+  } else {
+    explanation += `❌ Poor! Consider upgrading your connection.`;
+  }
+  
+  return explanation;
 }

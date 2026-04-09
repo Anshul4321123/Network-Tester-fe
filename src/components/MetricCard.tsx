@@ -1,13 +1,27 @@
 // components/MetricCard.tsx
+import { useState } from "react";
+
 interface MetricCardProps {
   label: string;
   value?: string;
   icon: string;
   isLoading?: boolean;
   description?: string;
+  onClick?: () => void;
+  clickable?: boolean;
 }
 
-export default function MetricCard({ label, value, icon, isLoading = false, description }: MetricCardProps) {
+export default function MetricCard({ 
+  label, 
+  value, 
+  icon, 
+  isLoading = false, 
+  description, 
+  onClick,
+  clickable = false 
+}: MetricCardProps) {
+  const [showTooltip, setShowTooltip] = useState(false);
+
   return (
     <div
       style={{
@@ -16,19 +30,22 @@ export default function MetricCard({ label, value, icon, isLoading = false, desc
         borderRadius: "16px",
         textAlign: "center",
         transition: "transform 0.2s, box-shadow 0.2s",
-        cursor: description ? "help" : "default",
+        cursor: clickable ? "pointer" : description ? "help" : "default",
         position: "relative",
         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
         e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
+        if (description && !clickable) setShowTooltip(true);
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "translateY(0)";
         e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+        setShowTooltip(false);
       }}
-      title={description}
+      onClick={onClick}
+      title={!clickable ? description : undefined}
     >
       <div style={{ fontSize: "clamp(20px, 5vw, 24px)", marginBottom: "6px" }}>
         {icon}
@@ -72,7 +89,7 @@ export default function MetricCard({ label, value, icon, isLoading = false, desc
         )}
       </div>
       
-      {description && !isLoading && (
+      {description && !isLoading && !clickable && (
         <div
           style={{
             fontSize: "9px",
@@ -82,6 +99,41 @@ export default function MetricCard({ label, value, icon, isLoading = false, desc
           }}
         >
           {description}
+        </div>
+      )}
+      
+      {/* Tooltip for clickable items */}
+      {showTooltip && clickable && description && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            marginBottom: "8px",
+            background: "#0f172a",
+            color: "#f1f5f9",
+            fontSize: "10px",
+            padding: "6px 10px",
+            borderRadius: "8px",
+            whiteSpace: "nowrap",
+            zIndex: 100,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            pointerEvents: "none",
+          }}
+        >
+          {description}
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              borderWidth: "5px",
+              borderStyle: "solid",
+              borderColor: "#0f172a transparent transparent transparent",
+            }}
+          />
         </div>
       )}
       
