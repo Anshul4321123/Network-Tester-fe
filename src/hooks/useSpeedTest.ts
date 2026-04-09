@@ -22,11 +22,8 @@ CONFIG (COST OPTIMIZED)
 ─────────────────────────────────────────
 */
 const FULL_TEST_COOLDOWN = 10 * 60 * 1000;
-
 const PING_CHECK_INTERVAL = 5 * 60 * 1000;
 const FULL_TEST_INTERVAL  = 30 * 60 * 1000;
-
-// 🔥 cost reduced
 const DOWNLOAD_STREAMS = 4;
 const DOWNLOAD_DURATION = 5000;
 const UPLOAD_STREAMS = 3;
@@ -71,6 +68,7 @@ export default function useSpeedTest() {
   const lastFullTestTimeRef = useRef(0);
   const pingIntervalRef = useRef<number | null>(null);
   const fullIntervalRef = useRef<number | null>(null);
+  const testStartTimeRef = useRef(0);
   const [running, setRunning] = useState(false);
 
   /*
@@ -117,21 +115,15 @@ export default function useSpeedTest() {
 
     if (pingIntervalRef.current || fullIntervalRef.current) return;
 
-    // 🔹 Ping loop (cheap)
     pingIntervalRef.current = window.setInterval(async () => {
       if (document.visibilityState !== "visible") return;
-
       const latency = await quickCheck();
       setMonitorPing(latency);
-
-      // 🔥 smart trigger (only test when degraded)
       if (latency > 150) {
         runTest("auto");
       }
-
     }, PING_CHECK_INTERVAL);
 
-    // 🔹 Fallback full test
     fullIntervalRef.current = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       runTest("auto");
@@ -278,10 +270,22 @@ export default function useSpeedTest() {
   source: "manual" | "auto"
   ─────────────────────────────────────────
   */
-  async function runTest(source: "manual" | "auto" = "manual", selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean }) {
+  async function runTest(
+    source: "manual" | "auto" = "manual", 
+    selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean },
+    isp?: string,
+    networkType?: string
+  ) {
+    // Prevent multiple simultaneous test runs
     if (runningRef.current) return;
 
+    // Prevent rapid consecutive test runs (debounce - 1 second)
     const now = Date.now();
+    if (now - testStartTimeRef.current < 1000) {
+      console.log("Test blocked: Too rapid consecutive test");
+      return;
+    }
+    testStartTimeRef.current = now;
 
     if (source === "auto" && now - lastFullTestTimeRef.current < FULL_TEST_COOLDOWN) return;
 
@@ -325,7 +329,6 @@ export default function useSpeedTest() {
       p = pingResult.ping;
       j = pingResult.jitter;
     } else {
-      // Keep existing values or set to 0
       p = ping ?? 0;
       j = jitter ?? 0;
     }
@@ -350,7 +353,6 @@ export default function useSpeedTest() {
 
     setPhase("analyzing");
 
-    // All functions now receive numbers (not null)
     const result = analyzeConnection(p, d, u);
     const scoreValue = calculateScore(p, d, u);
     const insightList = generateInsights(p, d, u);
@@ -374,7 +376,9 @@ export default function useSpeedTest() {
         jitter: j,
         download: d,
         upload: u,
-        score: scoreValue
+        score: scoreValue,
+        isp: isp || "Unknown",
+        networkType: networkType || "unknown"
       });
 
       saveBestScore(scoreValue);

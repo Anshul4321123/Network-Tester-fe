@@ -1,4 +1,4 @@
-// components/LiveGraph.tsx
+// components/LiveGraph.tsx - FIXED TypeScript error
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -39,7 +39,7 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
       const maxJitter = Math.max(...speeds, 30);
       return {
         beginAtZero: true,
-        max: Math.min(maxJitter + 10, 50), // Cap at 50ms, add 10ms padding
+        max: Math.min(maxJitter + 10, 50),
         title: {
           display: true,
           text: "Jitter (ms)",
@@ -60,7 +60,7 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
       const maxPing = Math.max(...speeds, 100);
       return {
         beginAtZero: true,
-        max: Math.min(maxPing + 50, 300), // Cap at 300ms
+        max: Math.min(maxPing + 50, 300),
         title: {
           display: true,
           text: "Ping (ms)",
@@ -100,7 +100,6 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
     };
   };
 
-  // Get line color based on graph type
   const getLineColor = () => {
     switch (graphType) {
       case "ping": return "#10b981";
@@ -111,7 +110,6 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
     }
   };
 
-  // Get fill color based on graph type
   const getFillColor = () => {
     switch (graphType) {
       case "ping": return "rgba(16, 185, 129, 0.1)";
@@ -190,12 +188,6 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
     },
     animation: {
       duration: isLive ? 200 : 500,
-    },
-    elements: {
-      line: {
-        borderJoin: "round" as const,
-        borderCap: "round" as const,
-      },
     },
   };
 

@@ -1,4 +1,4 @@
-// components/LiveGraphPopup.tsx
+// components/LiveGraphPopup.tsx - FIXED (duplicate keys)
 import { useEffect, useState } from "react";
 import LiveGraph from "./LiveGraph";
 
@@ -29,7 +29,6 @@ function JitterStats({ history }: { history: number[] }) {
   const max = Math.max(...history);
   const latest = history[history.length - 1];
   
-  // Determine stability rating
   const getStability = () => {
     if (avg < 10 && max - min < 15) return { text: "Very Stable", color: "#10b981", icon: "✅" };
     if (avg < 20 && max - min < 30) return { text: "Stable", color: "#3b82f6", icon: "👍" };
@@ -72,7 +71,7 @@ function JitterStats({ history }: { history: number[] }) {
   );
 }
 
-// Ping Visualizer Component
+// Ping Visualizer Component - FIXED duplicate keys
 function PingVisualizer({ ping, isTesting, progress }: { ping: number | null; isTesting: boolean; progress: number }) {
   const getPingQuality = (pingMs: number) => {
     if (pingMs < 30) return { label: "Excellent", color: "#10b981", icon: "🚀", description: "Perfect for gaming & video calls" };
@@ -82,15 +81,17 @@ function PingVisualizer({ ping, isTesting, progress }: { ping: number | null; is
   };
 
   const quality = ping ? getPingQuality(ping) : null;
-  const [ripples, setRipples] = useState<number[]>([]);
+  // FIXED: Use objects with unique id and timestamp for ripples
+  const [ripples, setRipples] = useState<{ id: number; timestamp: number }[]>([]);
 
   // Create ripple effect for each ping during testing
   useEffect(() => {
     if (isTesting && ping && ping > 0 && ping < 500) {
       const id = Date.now();
-      setRipples(prev => [...prev.slice(-5), id]);
+      const timestamp = Date.now();
+      setRipples(prev => [...prev.slice(-5), { id, timestamp }]);
       const timer = setTimeout(() => {
-        setRipples(prev => prev.filter(r => r !== id));
+        setRipples(prev => prev.filter(r => r.id !== id));
       }, ping);
       return () => clearTimeout(timer);
     }
@@ -119,10 +120,10 @@ function PingVisualizer({ ping, isTesting, progress }: { ping: number | null; is
           <span style={{ fontSize: "28px" }}>📡</span>
         </div>
         
-        {/* Ripple effects */}
-        {ripples.map((id, index) => (
+        {/* Ripple effects - FIXED: Use unique key combining id and timestamp */}
+        {ripples.map((ripple, index) => (
           <div
-            key={id}
+            key={`ripple-${ripple.id}-${ripple.timestamp}`}
             style={{
               position: "absolute",
               top: "50%",
@@ -195,7 +196,7 @@ function PingVisualizer({ ping, isTesting, progress }: { ping: number | null; is
   );
 }
 
-// Jitter Stability Meter Component
+// Jitter Stability Meter Component (unchanged, but keep as is)
 function JitterStabilityMeter({ jitter, history, isTesting }: { jitter: number | null; history: number[]; isTesting: boolean }) {
   if (!jitter && history.length === 0) return null;
   
@@ -216,7 +217,6 @@ function JitterStabilityMeter({ jitter, history, isTesting }: { jitter: number |
   
   return (
     <div>
-      {/* Stability Bars */}
       <div style={{ marginBottom: "20px" }}>
         <div style={{ display: "flex", gap: "8px", justifyContent: "center", alignItems: "flex-end", height: "80px" }}>
           {[1, 2, 3, 4, 5].map((bar) => {
@@ -242,7 +242,6 @@ function JitterStabilityMeter({ jitter, history, isTesting }: { jitter: number |
         </div>
       </div>
       
-      {/* Jitter Value */}
       <div style={{ marginBottom: "16px" }}>
         <div style={{ fontSize: "36px", fontWeight: "bold", color: stability.color }}>
           {currentJitter.toFixed(1)} ms
@@ -252,7 +251,6 @@ function JitterStabilityMeter({ jitter, history, isTesting }: { jitter: number |
         </div>
       </div>
       
-      {/* Stats Grid */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(3, 1fr)",
@@ -282,7 +280,6 @@ function JitterStabilityMeter({ jitter, history, isTesting }: { jitter: number |
         </div>
       </div>
       
-      {/* Recommendation */}
       <div style={{
         padding: "10px",
         background: `rgba(${stability.color === "#10b981" ? "16,185,129" : stability.color === "#3b82f6" ? "59,130,246" : stability.color === "#f59e0b" ? "245,158,11" : "239,68,68"}, 0.1)`,
@@ -335,7 +332,6 @@ export default function LiveGraphPopup({
     return `${value.toFixed(1)} ms`;
   };
 
-  // Auto-switch graph based on current test phase
   useEffect(() => {
     if (phase === "ping" && testSelection.ping) {
       setActiveGraph("ping");
@@ -346,7 +342,6 @@ export default function LiveGraphPopup({
     }
   }, [phase, testSelection]);
 
-  // Update ping progress
   useEffect(() => {
     if (phase === "ping" && pingHistory.length > 0) {
       const progress = (pingHistory.length / 8) * 100;
@@ -358,7 +353,6 @@ export default function LiveGraphPopup({
 
   if (!isOpen) return null;
 
-  // Get current live value
   const getCurrentValue = () => {
     switch (activeGraph) {
       case "ping":
@@ -377,7 +371,6 @@ export default function LiveGraphPopup({
   const currentValue = getCurrentValue();
   const isTestActive = running || phase === "ping" || phase === "download" || phase === "upload";
 
-  // Get graph title and styling
   const getGraphConfig = (type: GraphType) => {
     switch (type) {
       case "ping":
@@ -641,7 +634,6 @@ export default function LiveGraphPopup({
             textAlign: "center",
           }}
         >
-          {/* Ping Special Visualization */}
           {activeGraph === "ping" && (
             <PingVisualizer 
               ping={currentValue} 
@@ -650,7 +642,6 @@ export default function LiveGraphPopup({
             />
           )}
           
-          {/* Jitter Special Visualization */}
           {activeGraph === "jitter" && (
             <JitterStabilityMeter 
               jitter={currentValue}
@@ -659,7 +650,6 @@ export default function LiveGraphPopup({
             />
           )}
           
-          {/* Download/Upload Standard Display */}
           {(activeGraph === "download" || activeGraph === "upload") && (
             <>
               <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "8px" }}>
@@ -681,7 +671,6 @@ export default function LiveGraphPopup({
           )}
         </div>
 
-        {/* Live Graph - Only show for download/upload (ping/jitter have better visualizations) */}
         {(activeGraph === "download" || activeGraph === "upload") && (
           <div style={{ width: "100%", minHeight: "250px" }}>
             <LiveGraph 
@@ -710,12 +699,10 @@ export default function LiveGraphPopup({
           </div>
         )}
 
-        {/* Jitter Statistics - Only show when jitter graph is active and we have data */}
         {activeGraph === "jitter" && jitterHistory.length > 0 && (
           <JitterStats history={jitterHistory} />
         )}
 
-        {/* Ping Statistics - Show ping stats when ping graph is active */}
         {activeGraph === "ping" && pingHistory.length > 0 && (
           <div style={{
             marginTop: "12px",
@@ -751,7 +738,6 @@ export default function LiveGraphPopup({
           </div>
         )}
 
-        {/* Status Message */}
         <div
           style={{
             marginTop: "16px",
@@ -786,7 +772,6 @@ export default function LiveGraphPopup({
               "Graphs update live during testing"} • Click outside or press ✕ to close
         </div>
 
-        {/* Close Button */}
         <button
           onClick={onClose}
           style={{

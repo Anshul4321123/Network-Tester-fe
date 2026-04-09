@@ -1,4 +1,4 @@
-// utils/storage.ts - Add first-time achievement tracking
+// utils/storage.ts
 export interface SpeedTestRecord {
   date: string;
   ping: number;
@@ -6,6 +6,9 @@ export interface SpeedTestRecord {
   download: number;
   upload: number;
   score: number;
+  isp?: string;
+  networkType?: string;
+  originalIsp?: string;
 }
 
 export interface BestStats {
@@ -35,21 +38,90 @@ const BEST_SCORE_KEY = "bestScore";
 const BEST_STATS_KEY = "bestStats";
 const TEST_SELECTION_KEY = "test_selection";
 const ACHIEVEMENTS_KEY = "achievements";
+const ISP_MAPPING_KEY = "isp_mapping";
 
+// Save ISP mapping
+export function saveISPMapping(detectedISP: string, preferredName: string) {
+  const mappings = JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
+  mappings[detectedISP] = preferredName;
+  localStorage.setItem(ISP_MAPPING_KEY, JSON.stringify(mappings));
+}
+
+export function getISPPreferredName(detectedISP: string): string {
+  const mappings = JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
+  return mappings[detectedISP] || detectedISP;
+}
+
+export function getAllISPMappings(): Record<string, string> {
+  return JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
+}
+
+// FIXED: Properly save ISP and networkType
 export function saveResult(record: SpeedTestRecord) {
   const existing = JSON.parse(localStorage.getItem(KEY) || "[]");
-  const updated = [record, ...existing].slice(0, 20);
-  localStorage.setItem(KEY, JSON.stringify(updated));
+  
+  // Ensure ISP and networkType are preserved
+  const recordToSave = {
+    date: record.date,
+    ping: record.ping,
+    jitter: record.jitter,
+    download: record.download,
+    upload: record.upload,
+    score: record.score,
+    isp: record.isp || "Unknown",
+    networkType: record.networkType || "unknown"
+  };
+  
+  // Check for duplicate
+  const isDuplicate = existing.some((r: SpeedTestRecord) => 
+    r.date === recordToSave.date && 
+    r.ping === recordToSave.ping && 
+    r.download === recordToSave.download
+  );
+  
+  if (!isDuplicate) {
+    const updated = [recordToSave, ...existing];
+    localStorage.setItem(KEY, JSON.stringify(updated));
+    console.log("Saved test result with ISP:", {
+      isp: recordToSave.isp,
+      networkType: recordToSave.networkType
+    });
+  } else {
+    console.log("Duplicate test result skipped");
+  }
 }
 
 export function getHistory(): SpeedTestRecord[] {
-  return JSON.parse(localStorage.getItem(KEY) || "[]");
+  const data = localStorage.getItem(KEY);
+  return data ? JSON.parse(data) : [];
+}
+
+export function updateHistoryISP(originalISP: string, newName: string) {
+  const history = getHistory();
+  const updatedHistory = history.map(record => {
+    if (record.isp === originalISP) {
+      return { ...record, isp: newName };
+    }
+    return record;
+  });
+  localStorage.setItem(KEY, JSON.stringify(updatedHistory));
+}
+
+export function getPaginatedHistory(page: number, pageSize: number = 20): { data: SpeedTestRecord[]; total: number } {
+  const allHistory = getHistory();
+  const start = (page - 1) * pageSize;
+  const end = start + pageSize;
+  return {
+    data: allHistory.slice(start, end),
+    total: allHistory.length
+  };
 }
 
 export function saveBestScore(score: number) {
   const best = localStorage.getItem(BEST_SCORE_KEY);
   if (!best || score > Number(best)) {
     localStorage.setItem(BEST_SCORE_KEY, score.toString());
+    console.log("New best score saved:", score);
   }
 }
 
@@ -72,6 +144,7 @@ export function saveBestStats(score: number, download: number, upload: number, p
   };
 
   localStorage.setItem(BEST_STATS_KEY, JSON.stringify(updated));
+  console.log("Best stats updated:", updated);
 }
 
 export function getBestStats(): BestStats | null {
@@ -79,7 +152,6 @@ export function getBestStats(): BestStats | null {
   return raw ? JSON.parse(raw) : null;
 }
 
-// Test selection persistence
 export function saveTestSelection(selection: TestSelection) {
   localStorage.setItem(TEST_SELECTION_KEY, JSON.stringify(selection));
 }
@@ -97,7 +169,6 @@ export function loadTestSelection(): TestSelection {
   };
 }
 
-// Achievements tracking
 export function getAchievements(): Achievements {
   const saved = localStorage.getItem(ACHIEVEMENTS_KEY);
   if (saved) {
@@ -136,5 +207,11 @@ export function updateAchievement(type: "ping" | "jitter" | "download" | "upload
       break;
   }
   saveAchievements(achievements);
+  console.log(`Achievement unlocked: ${type}`);
   return achievements;
+}
+
+export function clearHistory() {
+  localStorage.setItem(KEY, JSON.stringify([]));
+  console.log("History cleared");
 }
