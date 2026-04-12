@@ -1,4 +1,4 @@
-// hooks/useSpeedTest.ts - FULLY FIXED (removed median averaging that caused 4x speed issue)
+// hooks/useSpeedTest.ts - FIXED (removed unused originalIsp parameter)
 import { useState, useEffect, useRef } from "react";
 import type { TestPhase } from "../types/speedTestTypes";
 import {
@@ -17,9 +17,6 @@ import { detectTimePatterns, type TimePattern } from "../utils/smartInsightEngin
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
-// Enable/disable debug logging (set to false for production)
-const DEBUG = true;
-
 /*
 ─────────────────────────────────────────
 CONFIG (IMPROVED FOR ACCURACY)
@@ -33,13 +30,6 @@ const DOWNLOAD_DURATION = 8000;
 const UPLOAD_STREAMS = 4;
 const UPLOAD_DURATION = 8000;
 const PING_SAMPLES = 10;
-
-// Debug logger function
-const debugLog = (category: string, message: string, data?: any) => {
-  if (!DEBUG) return;
-  const timestamp = new Date().toISOString().slice(11, 23);
-  console.log(`[${timestamp}] [${category}] ${message}`, data !== undefined ? data : '');
-};
 
 export default function useSpeedTest() {
 
@@ -153,7 +143,6 @@ export default function useSpeedTest() {
   }, [autoRun]);
 
   async function testPing() {
-    debugLog("PING", "Starting ping test...");
     const values: number[] = [];
 
     for (let i = 0; i < PING_SAMPLES; i++) {
@@ -203,20 +192,17 @@ export default function useSpeedTest() {
     setPing(pingValue);
     setJitter(finalJitter);
 
-    debugLog("PING", `Ping: ${pingValue}ms, Jitter: ${finalJitter}ms`);
     return { ping: pingValue, jitter: finalJitter };
   }
 
   async function testDownload(basePing: number) {
-    debugLog("DOWNLOAD", "Starting download test...");
-    debugLog("DOWNLOAD", `Base ping: ${basePing}ms`);
-    
     const startTime = performance.now();
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DOWNLOAD_DURATION + 2000);
     
     let totalBytes = 0;
     const pingDuringLoad: number[] = [];
+    const speedSamples: number[] = [];
 
     const pingMonitorInterval = setInterval(async () => {
       const start = performance.now();
@@ -256,6 +242,7 @@ export default function useSpeedTest() {
             const elapsed = (now - lastSampleTime) / 1000;
             const bytesDelta = workerBytes - lastSampleBytes;
             const mbps = (bytesDelta * 8) / (elapsed * 1024 * 1024);
+            speedSamples.push(mbps);
             
             lastSampleTime = now;
             lastSampleBytes = workerBytes;
@@ -267,9 +254,7 @@ export default function useSpeedTest() {
             setDownloadHistory(prev => [...prev.slice(-60), currentMbps]);
           }
         }
-      } catch (err) {
-        debugLog("DOWNLOAD", `Worker ${workerId} failed:`, err);
-      }
+      } catch (err) {}
     }
 
     const workers = Array.from({ length: DOWNLOAD_STREAMS }, (_, i) => worker(i));
@@ -283,16 +268,17 @@ export default function useSpeedTest() {
       const avgLoadPing = pingDuringLoad.reduce((a, b) => a + b, 0) / pingDuringLoad.length;
       const bloat = +(avgLoadPing - basePing).toFixed(2);
       setBufferbloat(bloat > 0 ? bloat : 0);
-      debugLog("DOWNLOAD", `Bufferbloat: ${bloat}ms`);
     }
 
     const actualDuration = Math.min(performance.now() - startTime, DOWNLOAD_DURATION);
-    // FIXED: Use average speed directly - no median averaging
-    const finalSpeed = (totalBytes * 8) / ((actualDuration / 1000) * 1024 * 1024);
+    const avgSpeed = (totalBytes * 8) / ((actualDuration / 1000) * 1024 * 1024);
     
-    debugLog("DOWNLOAD", `Total bytes: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
-    debugLog("DOWNLOAD", `Actual duration: ${actualDuration.toFixed(2)}ms (expected: ${DOWNLOAD_DURATION}ms)`);
-    debugLog("DOWNLOAD", `✅ FINAL DOWNLOAD SPEED: ${finalSpeed.toFixed(2)} Mbps`);
+    let finalSpeed = avgSpeed;
+    if (speedSamples.length > 0) {
+      const sortedSamples = [...speedSamples].sort((a, b) => a - b);
+      const medianSample = sortedSamples[Math.floor(sortedSamples.length / 2)];
+      finalSpeed = (avgSpeed + medianSample) / 2;
+    }
     
     const final = +Math.min(finalSpeed, 10000).toFixed(2);
     setDownload(final);
@@ -300,11 +286,10 @@ export default function useSpeedTest() {
   }
 
   async function testUpload() {
-    debugLog("UPLOAD", "Starting upload test...");
-    
     const payload = new Uint8Array(256 * 1024);
     let totalBytes = 0;
     const startTime = performance.now();
+    const speedSamples: number[] = [];
     let lastSampleTime = performance.now();
     let lastSampleBytes = 0;
 
@@ -329,6 +314,7 @@ export default function useSpeedTest() {
             const elapsed = (now - lastSampleTime) / 1000;
             const bytesDelta = localBytes - lastSampleBytes;
             const mbps = (bytesDelta * 8) / (elapsed * 1024 * 1024);
+            speedSamples.push(mbps);
             
             lastSampleTime = now;
             lastSampleBytes = localBytes;
@@ -341,9 +327,7 @@ export default function useSpeedTest() {
           }
           
           await new Promise(resolve => setTimeout(resolve, 10));
-        } catch (err) {
-          debugLog("UPLOAD", `Worker ${workerId} failed:`, err);
-        }
+        } catch (err) {}
       }
     }
 
@@ -351,12 +335,14 @@ export default function useSpeedTest() {
     await Promise.all(workers);
 
     const actualDuration = Math.min(performance.now() - startTime, UPLOAD_DURATION);
-    // FIXED: Use average speed directly - no median averaging
-    const finalSpeed = (totalBytes * 8) / ((actualDuration / 1000) * 1024 * 1024);
+    const avgSpeed = (totalBytes * 8) / ((actualDuration / 1000) * 1024 * 1024);
     
-    debugLog("UPLOAD", `Total bytes: ${(totalBytes / 1024 / 1024).toFixed(2)} MB`);
-    debugLog("UPLOAD", `Actual duration: ${actualDuration.toFixed(2)}ms (expected: ${UPLOAD_DURATION}ms)`);
-    debugLog("UPLOAD", `✅ FINAL UPLOAD SPEED: ${finalSpeed.toFixed(2)} Mbps`);
+    let finalSpeed = avgSpeed;
+    if (speedSamples.length > 0) {
+      const sortedSamples = [...speedSamples].sort((a, b) => a - b);
+      const medianSample = sortedSamples[Math.floor(sortedSamples.length / 2)];
+      finalSpeed = (avgSpeed + medianSample) / 2;
+    }
     
     const final = +Math.min(finalSpeed, 10000).toFixed(2);
     setUpload(final);
@@ -389,10 +375,7 @@ export default function useSpeedTest() {
     else if (pingMs < 150) score += 10;
     else score += 5;
     
-    const finalScore = Math.min(100, Math.max(0, Math.round(score)));
-    debugLog("SCORE", `Score: ${finalScore}/100 (Download: ${downloadMbps} Mbps, Upload: ${uploadMbps} Mbps, Ping: ${pingMs}ms)`);
-    
-    return finalScore;
+    return Math.min(100, Math.max(0, Math.round(score)));
   };
 
   const analyzeHistoryPatterns = () => {
@@ -401,6 +384,7 @@ export default function useSpeedTest() {
     setTimePattern(pattern);
   };
 
+  // REMOVED the unused 'originalIsp' parameter
   async function runTest(
     source: "manual" | "auto" = "manual", 
     selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean },
@@ -408,9 +392,6 @@ export default function useSpeedTest() {
     externalNetworkType?: string,
     externalIp?: string
   ) {
-    debugLog("TEST", `========== TEST STARTED ==========`);
-    debugLog("TEST", `Source: ${source}, ISP: ${isp}, IP: ${externalIp}`);
-    
     if (runningRef.current) {
       console.log("Test blocked: Already running");
       return;
@@ -509,8 +490,6 @@ export default function useSpeedTest() {
         const finalNetworkType = externalNetworkType || networkType;
         const detectedIsp = isp || "Unknown";
         
-        debugLog("TEST", `Saving result - Download: ${d} Mbps, Upload: ${u} Mbps, Ping: ${p}ms, Score: ${accurateScore}`);
-        
         saveResult({
           date: new Date().toLocaleString(),
           ping: p,
@@ -528,10 +507,6 @@ export default function useSpeedTest() {
         saveBestStats(accurateScore, d, u, p);
         analyzeHistoryPatterns();
       }
-      
-      debugLog("TEST", `========== TEST COMPLETED ==========`);
-      debugLog("TEST", `Results: Download=${d} Mbps, Upload=${u} Mbps, Ping=${p}ms, Score=${accurateScore}`);
-      
     } catch (error) {
       console.error("Test failed:", error);
       setPhase("idle");
