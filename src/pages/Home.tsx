@@ -1,4 +1,4 @@
-// Home.tsx - FULLY FIXED with automatic network detection and proper ISP handling
+// Home.tsx - FULLY FIXED with server warming and random facts
 import { useEffect, useState, useRef } from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
@@ -28,7 +28,7 @@ import {
   type BestStats,
   type Achievements 
 } from "../utils/storage";
-import { detectISP, type ISPInfo as ISPInfoType } from "../utils/ispDetector";
+import { detectISP,  type ISPInfo as ISPInfoType } from "../utils/ispDetector";
 
 interface RecordBreak {
   type: string;
@@ -37,6 +37,184 @@ interface RecordBreak {
 }
 
 type FirstTimeType = string;
+
+// Random facts to show while server is warming up
+const RANDOM_FACTS = [
+  "💡 Did you know? The first internet speed test was created in 1996!",
+  "⚡ The fastest internet speed ever recorded is 319 Tbps (Terabits per second)!",
+  "🌊 The first underwater internet cable was laid in 1858 (for telegraph)!",
+  "🎮 Gaming requires less than 50ms ping for a smooth experience!",
+  "📺 Streaming 4K Netflix needs about 25 Mbps download speed!",
+  "🐌 The average global internet speed is around 90 Mbps!",
+  "🚀 5G can be up to 100x faster than 4G!",
+  "💾 The first website ever created is still online (info.cern.ch)!",
+  "🌍 There are over 5 billion internet users worldwide!",
+  "🔌 The first WiFi network was called 'WaveLAN' and ran at 2 Mbps!",
+  "📡 Ping measures the time data takes to travel to the server and back!",
+  "🎯 Jitter is the variation in ping - lower is better for gaming!",
+  "🏆 SpeedLab's scoring system considers download (40%), upload (20%), and ping (40%)!",
+  "💪 Your internet speed can be affected by your router, devices, and even weather!",
+  "🔄 Speed tests use multiple parallel connections for accuracy!",
+];
+
+// Server warming component
+// Server warming component - FIXED (removed NodeJS namespace reference)
+const ServerWarming = ({ onComplete }: { onComplete: () => void }) => {
+  const [factIndex, setFactIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState("🔄 Connecting to server...");
+
+  useEffect(() => {
+    const startTime = Date.now();
+    const minWarmupTime = 2000; // Minimum 2 seconds for user to see facts
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const warmupServer = async () => {
+      try {
+        setStatus("📡 Pinging server...");
+        const pingStart = performance.now();
+        await fetch(`${import.meta.env.VITE_BASE_URL}/ping`, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' }
+        });
+        const pingTime = performance.now() - pingStart;
+        setStatus(`✅ Server responded in ${pingTime.toFixed(0)}ms!`);
+        
+        // Rotate facts every 2 seconds
+        interval = setInterval(() => {
+          setFactIndex(prev => (prev + 1) % RANDOM_FACTS.length);
+          setProgress(prev => Math.min(prev + 10, 100));
+        }, 200);
+        
+        // Ensure minimum warmup time
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, minWarmupTime - elapsed);
+        
+        setTimeout(() => {
+          if (interval) clearInterval(interval);
+          onComplete();
+        }, remaining);
+        
+      } catch (error) {
+        console.error("Server warmup failed:", error);
+        setStatus("⚠️ Server starting up... (first test may take longer)");
+        
+        // Still proceed after warmup
+        setTimeout(() => {
+          if (interval) clearInterval(interval);
+          onComplete();
+        }, 3000);
+      }
+    };
+
+    warmupServer();
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [onComplete]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        zIndex: 10000,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        animation: "fadeIn 0.3s ease",
+      }}
+    >
+      <div
+        style={{
+          textAlign: "center",
+          color: "#fff",
+          maxWidth: "400px",
+          padding: "32px",
+        }}
+      >
+        {/* Animated loader */}
+        <div
+          style={{
+            width: "80px",
+            height: "80px",
+            margin: "0 auto 24px",
+            border: "4px solid rgba(255,255,255,0.2)",
+            borderTop: "4px solid #fff",
+            borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+          }}
+        />
+        
+        {/* Status text */}
+        <div
+          style={{
+            fontSize: "18px",
+            fontWeight: "600",
+            marginBottom: "8px",
+          }}
+        >
+          {status}
+        </div>
+        
+        {/* Progress bar */}
+        <div
+          style={{
+            width: "100%",
+            height: "4px",
+            background: "rgba(255,255,255,0.2)",
+            borderRadius: "2px",
+            margin: "16px 0",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${progress}%`,
+              height: "100%",
+              background: "#fff",
+              borderRadius: "2px",
+              transition: "width 0.2s ease",
+            }}
+          />
+        </div>
+        
+        {/* Random fact */}
+        <div
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            borderRadius: "16px",
+            padding: "16px",
+            marginTop: "16px",
+            animation: "slideUp 0.3s ease",
+          }}
+        >
+          <div style={{ fontSize: "12px", opacity: 0.8, marginBottom: "8px" }}>
+            ✨ Did you know?
+          </div>
+          <div style={{ fontSize: "14px", fontWeight: "500", lineHeight: "1.5" }}>
+            {RANDOM_FACTS[factIndex]}
+          </div>
+        </div>
+        
+        <div
+          style={{
+            fontSize: "11px",
+            opacity: 0.6,
+            marginTop: "24px",
+          }}
+        >
+          Warming up server for best performance...
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export default function Home() {
   const [history, setHistory] = useState<SpeedTestRecord[]>(getHistory());
@@ -56,6 +234,7 @@ export default function Home() {
   });
   const [previousIp, setPreviousIp] = useState<string>("");
   const [originalIspName, setOriginalIspName] = useState<string>("");
+  const [serverWarmedUp, setServerWarmedUp] = useState(false);
   
   const [celebration, setCelebration] = useState<{
     show: boolean;
@@ -100,12 +279,43 @@ export default function Home() {
   } = useSpeedTest();
 
   // ============================================
+  // SERVER WARMUP - Check if server is responsive
+  // ============================================
+
+  useEffect(() => {
+    const checkServer = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(`${import.meta.env.VITE_BASE_URL}/ping`, {
+          signal: controller.signal,
+          cache: 'no-store'
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (response.ok) {
+          setServerWarmedUp(true);
+        } else {
+          // Still show UI but mark as warmed up after a delay
+          setTimeout(() => setServerWarmedUp(true), 3000);
+        }
+      } catch (error) {
+        // Server might be cold starting, wait a bit
+        setTimeout(() => setServerWarmedUp(true), 4000);
+      }
+    };
+    
+    checkServer();
+  }, []);
+
+  // ============================================
   // ISP REFRESH FUNCTIONS
   // ============================================
 
   const refreshISPInfo = async () => {
     console.log("🔄 Refreshing ISP info...");
-    // Force fresh detection by clearing cache first
     localStorage.removeItem("cached_isp_info");
     const info = await detectISP();
     if (info) {
@@ -121,7 +331,6 @@ export default function Home() {
   // NETWORK CHANGE DETECTION
   // ============================================
 
-  // Detect network changes by comparing IP
   useEffect(() => {
     const checkNetworkChange = async () => {
       const currentIp = ispInfo?.ip;
@@ -136,32 +345,6 @@ export default function Home() {
     };
     checkNetworkChange();
   }, [ispInfo?.ip]);
-
-  // Periodic network check (every 15 seconds)
-  // useEffect(() => {
-  //   const interval = setInterval(async () => {
-  //     // Only run if tab is visible to save resources
-  //     if (!isTabVisible) return;
-      
-  //     try {
-  //       const response = await fetch('https://api.ipify.org?format=json');
-  //       const data = await response.json();
-  //       const currentIp = data.ip;
-  //       const storedIp = ispInfo?.ip;
-        
-  //       if (storedIp && currentIp && storedIp !== currentIp) {
-  //         console.log("🌐 Network change detected via periodic check!");
-  //         console.log("Old IP:", storedIp, "New IP:", currentIp);
-  //         localStorage.removeItem("cached_isp_info");
-  //         await refreshISPInfo();
-  //       }
-  //     } catch (error) {
-  //       // Silent fail - network request may fail, that's fine
-  //     }
-  //   }, 15000);
-    
-  //   return () => clearInterval(interval);
-  // }, [ispInfo?.ip, isTabVisible]);
 
   // ============================================
   // LIFECYCLE HOOKS
@@ -196,7 +379,6 @@ export default function Home() {
     }, 500);
   };
 
-  // Load ISP on page load - force fresh detection
   useEffect(() => {
     const loadISP = async () => {
       setIspLoading(true);
@@ -256,7 +438,6 @@ export default function Home() {
     
     const currentAchievements = getAchievements();
     
-    // Use the ORIGINAL ISP name for saving to history
     const finalIsp = originalIspName || ispInfo?.isp || "Unknown";
     const finalNetworkType = networkType || "unknown";
     
@@ -391,38 +572,34 @@ export default function Home() {
     return `${value.toFixed(1)} Mbps`;
   };
 
-  // CRITICAL FIX: Refresh ISP BEFORE running the test
-// In Home.tsx, update the handleRunTest function:
-
-const handleRunTest = async () => {
-  console.log("🔄 Refreshing ISP before test...");
-  
-  localStorage.removeItem("cached_isp_info");
-  const freshInfo = await detectISP();
-  
-  let currentOriginalIsp = "Unknown";
-  let currentIp = "unknown";
-  
-  if (freshInfo) {
-    currentOriginalIsp = freshInfo.isp || "Unknown";
-    currentIp = freshInfo.ip || "unknown";
-    setOriginalIspName(currentOriginalIsp);
-    setIspInfo(freshInfo);
-    setPreviousIp(currentIp);
-    localStorage.setItem("cached_isp_info", JSON.stringify({ ...freshInfo, timestamp: Date.now() }));
-  } else {
-    currentOriginalIsp = originalIspName || ispInfo?.isp || "Unknown";
-    currentIp = ispInfo?.ip || "unknown";
-  }
-  
-  const finalNetworkType = networkType || "unknown";
-  
-  console.log("🚀 Running test with ISP:", currentOriginalIsp);
-  console.log("📡 IP:", currentIp);
-  
-  // Now only 5 parameters: source, selection, isp, externalNetworkType, externalIp
-  runTest("manual", testSelection, currentOriginalIsp, finalNetworkType, currentIp);
-};
+  const handleRunTest = async () => {
+    console.log("🔄 Refreshing ISP before test...");
+    
+    localStorage.removeItem("cached_isp_info");
+    const freshInfo = await detectISP();
+    
+    let currentOriginalIsp = "Unknown";
+    let currentIp = "unknown";
+    
+    if (freshInfo) {
+      currentOriginalIsp = freshInfo.isp || "Unknown";
+      currentIp = freshInfo.ip || "unknown";
+      setOriginalIspName(currentOriginalIsp);
+      setIspInfo(freshInfo);
+      setPreviousIp(currentIp);
+      localStorage.setItem("cached_isp_info", JSON.stringify({ ...freshInfo, timestamp: Date.now() }));
+    } else {
+      currentOriginalIsp = originalIspName || ispInfo?.isp || "Unknown";
+      currentIp = ispInfo?.ip || "unknown";
+    }
+    
+    const finalNetworkType = networkType || "unknown";
+    
+    console.log("🚀 Running test with ISP:", currentOriginalIsp);
+    console.log("📡 IP:", currentIp);
+    
+    runTest("manual", testSelection, currentOriginalIsp, finalNetworkType, currentIp);
+  };
 
   const getBackgroundStyle = () => {
     if (running) {
@@ -438,6 +615,11 @@ const handleRunTest = async () => {
       minHeight: "100vh",
     };
   };
+
+  // Show server warming screen if not warmed up yet
+  if (!serverWarmedUp) {
+    return <ServerWarming onComplete={() => setServerWarmedUp(true)} />;
+  }
 
   return (
     <div style={getBackgroundStyle()}>
@@ -674,6 +856,24 @@ const handleRunTest = async () => {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.6; }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
       `}</style>
     </div>
