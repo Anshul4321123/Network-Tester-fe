@@ -29,23 +29,25 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
 
   const formatValue = (value: number, type: string) => {
     if (type === "ping") return `${value.toFixed(1)} ms`;
+    if (type === "score") return `${value.toFixed(0)} points`;
     if (value > 1000) return `${(value / 1000).toFixed(2)} Gbps`;
     return `${value.toFixed(1)} Mbps`;
   };
 
   const getRawValue = (value: number, type: string) => {
     if (type === "ping") return `${value.toFixed(1)} ms`;
+    if (type === "score") return `${value.toFixed(0)} points`;
     return `${value.toFixed(1)} Mbps`;
   };
 
   const getDifference = (oldValue: number, newValue: number, type: string) => {
     if (oldValue === newValue) {
       return { 
-        text: "✨ Exactly the same! ✨", 
+        text: "✨ No change ✨", 
         color: "#8b5cf6", 
         icon: "✨", 
         percent: 0,
-        description: "Your connection is perfectly consistent!"
+        description: "Your connection remains perfectly consistent!"
       };
     }
     
@@ -67,6 +69,8 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
     let formattedDiff = "";
     if (type === "ping") {
       formattedDiff = `${absDiff.toFixed(1)} ms`;
+    } else if (type === "score") {
+      formattedDiff = `${absDiff.toFixed(0)} points`;
     } else {
       if (absDiff > 1000) {
         formattedDiff = `${(absDiff / 1000).toFixed(2)} Gbps`;
@@ -80,6 +84,10 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
       description = isImproved 
         ? "Lower latency means better responsiveness for gaming and calls!"
         : "Higher latency may cause lag in real-time applications.";
+    } else if (type === "score") {
+      description = isImproved
+        ? "Higher score means better overall connection quality!"
+        : "Lower score indicates degraded connection performance.";
     } else {
       description = isImproved
         ? "Faster speeds mean better streaming, downloads, and uploads!"
@@ -112,7 +120,7 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
       case "download": return "Download Speed";
       case "upload": return "Upload Speed";
       case "ping": return "Ping Latency";
-      case "score": return "Score";
+      case "score": return "Connection Score";
       default: return type;
     }
   };
@@ -129,7 +137,7 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
 
   const getOverallMessage = () => {
     if (unchangedCount === improvements.length) {
-      return "✨ Miracle! Your connection is perfectly identical! ✨";
+      return "✨ Perfect consistency! All metrics unchanged! ✨";
     }
     if (improvedCount > declinedCount) {
       return "🎉 Your connection is getting faster! Keep it up! 🎉";
@@ -261,10 +269,10 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
                   </div>
                 </div>
                 
-                {/* Description for each metric */}
+                {/* Description for each metric - Show even when unchanged */}
                 <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px", paddingLeft: "34px" }}>
                   {isUnchanged ? (
-                    <span>🎯 Perfect consistency! Your connection is very stable.</span>
+                    <span>🎯 Same as before! Your connection is very stable and consistent.</span>
                   ) : (
                     <span>{diff.description}</span>
                   )}
@@ -273,6 +281,21 @@ export default function ComparisonPopup({ isOpen, onClose, improvements }: Compa
             );
           })}
         </div>
+
+        {/* Add a fun fact when all metrics are the same */}
+        {improvements.every(i => i.oldValue === i.newValue) && (
+          <div style={{ 
+            marginBottom: "16px", 
+            padding: "10px", 
+            background: "#f3e8ff", 
+            borderRadius: "12px",
+            fontSize: "11px",
+            color: "#6b21a8"
+          }}>
+            🤔 Fun fact: Getting identical speeds twice in a row is incredibly rare! 
+            Your connection is remarkably consistent.
+          </div>
+        )}
 
         <button
           onClick={onClose}

@@ -1,4 +1,4 @@
-// utils/storage.ts
+// utils/storage.ts - FULLY FIXED
 export interface SpeedTestRecord {
   date: string;
   ping: number;
@@ -6,9 +6,13 @@ export interface SpeedTestRecord {
   download: number;
   upload: number;
   score: number;
+  customName?: string;
+  originalIsp?: string;
   isp?: string;
   networkType?: string;
-  originalIsp?: string;
+  hour?: number;
+  networkFingerprint?: string;
+  ip?: string;
 }
 
 export interface BestStats {
@@ -33,34 +37,279 @@ export interface Achievements {
   hasRunFullTest: boolean;
 }
 
+export interface NetworkMapping {
+  fingerprint: string;
+  originalName: string;
+  customName: string;
+  lastSeen: number;
+}
+
 const KEY = "speed_test_history";
 const BEST_SCORE_KEY = "bestScore";
 const BEST_STATS_KEY = "bestStats";
 const TEST_SELECTION_KEY = "test_selection";
 const ACHIEVEMENTS_KEY = "achievements";
-const ISP_MAPPING_KEY = "isp_mapping";
+const ISP_MAPPING_KEY = "isp_mapping_v2";
 
-// Save ISP mapping
-export function saveISPMapping(detectedISP: string, preferredName: string) {
+// ============================================
+// VPN DETECTION FUNCTIONS - FIXED
+// ============================================
+
+export function isVPNLikely(ip: string, ispName: string): boolean {
+  const lowerISP = ispName.toLowerCase();
+  
+  // First, check if it's a known residential ISP - definitely NOT VPN
+  const residentialISP = [
+    'auriganet', 'jio', 'airtel', 'vi', 'vodafone', 'idea', 'bsnl', 'mtnl',
+    'comcast', 'spectrum', 'cox', 'verizon', 'att', 't-mobile', 'sprint',
+    'broadband', 'fiber', 'cable', 'dsl', 'internet', 'telecom',
+    'digital technologies', 'private limited', 'technologies pvt'
+  ];
+  
+  for (const res of residentialISP) {
+    if (lowerISP.includes(res)) {
+      console.log(`🏠 Residential ISP detected: ${ispName}`);
+      return false;
+    }
+  }
+  
+  // Only then check for VPN indicators
+  const vpnIndicators = [
+    'vpn', 'proxy', 'virtual', 'hide', 'secure', 'anonymizer',
+    'm247', 'digitalocean', 'aws', 'amazon', 'azure', 'google cloud', 'cloudflare',
+    'ovh', 'linode', 'vultr', 'hetzner', 'rackspace', 'proton'
+  ];
+  
+  for (const indicator of vpnIndicators) {
+    if (lowerISP.includes(indicator)) {
+      console.log(`🛡️ VPN detected: ${ispName} contains "${indicator}"`);
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+export function setVPNState(isVPN: boolean) {
+  localStorage.setItem("is_vpn_detected", isVPN ? "true" : "false");
+}
+
+export function getVPNState(): boolean {
+  return localStorage.getItem("is_vpn_detected") === "true";
+}
+
+// ============================================
+// NETWORK FINGERPRINT GENERATION - FIXED
+// ============================================
+
+// Generate fingerprint directly from IP (not from stored value)
+export function generateFingerprintFromIp(ip: string, networkType: string): string {
+  // Use FULL IP address for maximum specificity
+  const isVPN = getVPNState();
+  
+  if (isVPN) {
+    const vpnFingerprint = `vpn|${ip}|${networkType}`;
+    return btoa(vpnFingerprint).substring(0, 32);
+  }
+  
+  const fingerprint = `${ip}|${networkType}`;
+  return btoa(fingerprint).substring(0, 32);
+}
+
+// Legacy function - kept for compatibility
+export function generateNetworkFingerprint(ispName: string, networkType: string): string {
+  const storedIpPrefix = localStorage.getItem("network_ip_prefix");
+  const isVPN = getVPNState();
+  
+  if (isVPN) {
+    const vpnFingerprint = `vpn|${ispName || "unknown"}|${networkType}`;
+    return btoa(vpnFingerprint).substring(0, 32);
+  }
+  
+  const fingerprint = `${storedIpPrefix || "unknown"}|${networkType}`;
+  return btoa(fingerprint).substring(0, 32);
+}
+
+export function saveNetworkIpPrefix(ip: string, ispName: string) {
+  const isVPN = isVPNLikely(ip, ispName);
+  setVPNState(isVPN);
+  
+  if (isVPN) {
+    localStorage.setItem("network_ip_prefix", "vpn");
+    localStorage.setItem("vpn_detected", "true");
+    console.log("🛡️ VPN detected - using special fingerprint");
+  } else {
+    const ipPrefix = ip.split('.').slice(0, 2).join('.');
+    localStorage.setItem("network_ip_prefix", ipPrefix);
+    localStorage.setItem("vpn_detected", "false");
+  }
+}
+
+// ============================================
+// ISP MAPPING WITH FINGERPRINT
+// ============================================
+
+export function saveISPMapping(fingerprint: string, originalName: string, customName: string) {
   const mappings = JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
-  mappings[detectedISP] = preferredName;
+  
+  const existing = mappings[fingerprint];
+  const finalOriginalName = existing?.originalName || originalName;
+  
+  mappings[fingerprint] = {
+    fingerprint,
+    originalName: finalOriginalName,
+    customName: customName,
+    lastSeen: Date.now()
+  };
   localStorage.setItem(ISP_MAPPING_KEY, JSON.stringify(mappings));
+  updateHistoryISPByFingerprint(fingerprint, customName, finalOriginalName);
 }
 
-export function getISPPreferredName(detectedISP: string): string {
+export function getISPPreferredName(fingerprint: string, originalName: string): string {
   const mappings = JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
-  return mappings[detectedISP] || detectedISP;
+  const mapping = mappings[fingerprint];
+  if (mapping && mapping.customName) {
+    return mapping.customName;
+  }
+  return originalName;
 }
 
-export function getAllISPMappings(): Record<string, string> {
+export function getAllNetworkMappings(): Record<string, NetworkMapping> {
   return JSON.parse(localStorage.getItem(ISP_MAPPING_KEY) || "{}");
 }
 
-// FIXED: Properly save ISP and networkType
+export function getNetworkMapping(fingerprint: string): NetworkMapping | null {
+  const mappings = getAllNetworkMappings();
+  return mappings[fingerprint] || null;
+}
+
+export function updateHistoryISPByFingerprint(fingerprint: string, customName: string, originalName: string) {
+  const history = getHistory();
+  const updatedHistory = history.map(record => {
+    if (record.networkFingerprint === fingerprint) {
+      return { 
+        ...record, 
+        customName: customName,
+        originalIsp: originalName,
+        isp: customName
+      };
+    }
+    return record;
+  });
+  localStorage.setItem(KEY, JSON.stringify(updatedHistory));
+}
+
+// ============================================
+// MIGRATION FUNCTION
+// ============================================
+
+export function migrateAndFixHistory() {
+  const data = localStorage.getItem(KEY);
+  if (!data) return;
+  
+  const history: any[] = JSON.parse(data);
+  let needsUpdate = false;
+  
+  const fixedHistory = history.map(record => {
+    let modified = false;
+    const fixedRecord = { ...record };
+    
+    let customName = fixedRecord.customName || fixedRecord.isp;
+    let originalIsp = fixedRecord.originalIsp;
+    
+    if (customName && originalIsp === customName) {
+      if (fixedRecord.networkFingerprint) {
+        const mapping = getNetworkMapping(fixedRecord.networkFingerprint);
+        if (mapping && mapping.originalName && mapping.originalName !== customName) {
+          originalIsp = mapping.originalName;
+          modified = true;
+          needsUpdate = true;
+        }
+      }
+      
+      if (originalIsp === customName) {
+        const match = customName.match(/^(.+?)\s*\((.+?)\)$/);
+        if (match) {
+          customName = match[1].trim();
+          originalIsp = match[2].trim();
+          modified = true;
+          needsUpdate = true;
+        }
+      }
+    }
+    
+    if (!originalIsp && customName) {
+      originalIsp = customName;
+      modified = true;
+      needsUpdate = true;
+    }
+    
+    if (!customName && originalIsp) {
+      customName = originalIsp;
+      modified = true;
+      needsUpdate = true;
+    }
+    
+    if (!fixedRecord.networkFingerprint && originalIsp) {
+      fixedRecord.networkFingerprint = generateNetworkFingerprint(
+        originalIsp, 
+        fixedRecord.networkType || "unknown"
+      );
+      modified = true;
+      needsUpdate = true;
+    }
+    
+    if (modified) {
+      fixedRecord.customName = customName;
+      fixedRecord.originalIsp = originalIsp;
+      fixedRecord.isp = customName;
+    }
+    
+    return modified ? fixedRecord : record;
+  });
+  
+  if (needsUpdate) {
+    localStorage.setItem(KEY, JSON.stringify(fixedHistory));
+    console.log("✅ History migration completed - fixed", fixedHistory.length, "records");
+  }
+}
+
+// ============================================
+// SAVE RESULT - COMPLETELY REWRITTEN
+// ============================================
+
 export function saveResult(record: SpeedTestRecord) {
   const existing = JSON.parse(localStorage.getItem(KEY) || "[]");
   
-  // Ensure ISP and networkType are preserved
+  // Generate fingerprint from the actual IP in the record
+  let fingerprint = record.networkFingerprint;
+  
+  if (!fingerprint && record.ip) {
+    const networkType = record.networkType || "unknown";
+    fingerprint = generateFingerprintFromIp(record.ip, networkType);
+  }
+  
+  if (!fingerprint) {
+    console.error("Cannot generate fingerprint - no IP provided");
+    return;
+  }
+  
+  // Check for existing mapping
+  const mapping = getNetworkMapping(fingerprint);
+  
+  let originalIsp: string;
+  let customName: string;
+  const providedIsp = record.customName || record.isp || "Unknown";
+  
+  if (mapping) {
+    originalIsp = mapping.originalName;
+    customName = mapping.customName;
+  } else {
+    originalIsp = providedIsp;
+    customName = providedIsp;
+    saveISPMapping(fingerprint, originalIsp, customName);
+  }
+  
   const recordToSave = {
     date: record.date,
     ping: record.ping,
@@ -68,8 +317,13 @@ export function saveResult(record: SpeedTestRecord) {
     download: record.download,
     upload: record.upload,
     score: record.score,
-    isp: record.isp || "Unknown",
-    networkType: record.networkType || "unknown"
+    customName: customName,
+    originalIsp: originalIsp,
+    isp: customName,
+    networkType: record.networkType || "unknown",
+    networkFingerprint: fingerprint,
+    hour: record.hour || new Date().getHours(),
+    ip: record.ip,
   };
   
   // Check for duplicate
@@ -82,30 +336,106 @@ export function saveResult(record: SpeedTestRecord) {
   if (!isDuplicate) {
     const updated = [recordToSave, ...existing];
     localStorage.setItem(KEY, JSON.stringify(updated));
-    console.log("Saved test result with ISP:", {
-      isp: recordToSave.isp,
-      networkType: recordToSave.networkType
+    console.log("Saved test result:", {
+      customName: recordToSave.customName,
+      originalIsp: recordToSave.originalIsp,
+      fingerprint,
+      ip: recordToSave.ip
     });
-  } else {
-    console.log("Duplicate test result skipped");
   }
 }
 
+// ============================================
+// GET HISTORY - FIXED
+// ============================================
+
 export function getHistory(): SpeedTestRecord[] {
   const data = localStorage.getItem(KEY);
-  return data ? JSON.parse(data) : [];
+  const history = data ? JSON.parse(data) : [];
+  
+  const migrationRun = localStorage.getItem("migration_run_v6");
+  if (!migrationRun) {
+    migrateAndFixHistory();
+    localStorage.setItem("migration_run_v6", "true");
+    return getHistory();
+  }
+  
+  return history.map((record: any) => {
+    let originalIsp = record.originalIsp;
+    let customName = record.customName || record.isp;
+    
+    if (!originalIsp || originalIsp === customName) {
+      if (record.networkFingerprint) {
+        const mapping = getNetworkMapping(record.networkFingerprint);
+        if (mapping && mapping.originalName) {
+          originalIsp = mapping.originalName;
+        }
+      }
+      
+      if (!originalIsp && customName) {
+        const match = customName.match(/^(.+?)\s*\((.+?)\)$/);
+        if (match) {
+          customName = match[1].trim();
+          originalIsp = match[2].trim();
+        } else {
+          originalIsp = customName;
+        }
+      }
+    }
+    
+    if (record.networkFingerprint) {
+      const mapping = getNetworkMapping(record.networkFingerprint);
+      if (mapping && mapping.customName && mapping.customName !== customName) {
+        customName = mapping.customName;
+      }
+      if (mapping && mapping.originalName && (!originalIsp || originalIsp === customName)) {
+        originalIsp = mapping.originalName;
+      }
+    }
+    
+    if (!customName || customName === "Unknown") {
+      customName = originalIsp || "Unknown";
+    }
+    if (!originalIsp || originalIsp === "Unknown") {
+      originalIsp = customName;
+    }
+    
+    return {
+      date: record.date,
+      ping: record.ping,
+      jitter: record.jitter,
+      download: record.download,
+      upload: record.upload,
+      score: record.score,
+      customName: customName,
+      originalIsp: originalIsp,
+      networkType: record.networkType || "unknown",
+      networkFingerprint: record.networkFingerprint,
+      hour: record.hour,
+      ip: record.ip,
+    };
+  });
 }
 
+// Legacy function - keep for compatibility
 export function updateHistoryISP(originalISP: string, newName: string) {
   const history = getHistory();
   const updatedHistory = history.map(record => {
-    if (record.isp === originalISP) {
-      return { ...record, isp: newName };
+    if (record.originalIsp === originalISP) {
+      return { 
+        ...record, 
+        customName: newName,
+        isp: newName
+      };
     }
     return record;
   });
   localStorage.setItem(KEY, JSON.stringify(updatedHistory));
 }
+
+// ============================================
+// PAGINATED HISTORY
+// ============================================
 
 export function getPaginatedHistory(page: number, pageSize: number = 20): { data: SpeedTestRecord[]; total: number } {
   const allHistory = getHistory();
@@ -117,11 +447,14 @@ export function getPaginatedHistory(page: number, pageSize: number = 20): { data
   };
 }
 
+// ============================================
+// BEST SCORE & STATS
+// ============================================
+
 export function saveBestScore(score: number) {
   const best = localStorage.getItem(BEST_SCORE_KEY);
   if (!best || score > Number(best)) {
     localStorage.setItem(BEST_SCORE_KEY, score.toString());
-    console.log("New best score saved:", score);
   }
 }
 
@@ -144,13 +477,16 @@ export function saveBestStats(score: number, download: number, upload: number, p
   };
 
   localStorage.setItem(BEST_STATS_KEY, JSON.stringify(updated));
-  console.log("Best stats updated:", updated);
 }
 
 export function getBestStats(): BestStats | null {
   const raw = localStorage.getItem(BEST_STATS_KEY);
   return raw ? JSON.parse(raw) : null;
 }
+
+// ============================================
+// TEST SELECTION
+// ============================================
 
 export function saveTestSelection(selection: TestSelection) {
   localStorage.setItem(TEST_SELECTION_KEY, JSON.stringify(selection));
@@ -168,6 +504,10 @@ export function loadTestSelection(): TestSelection {
     upload: true,
   };
 }
+
+// ============================================
+// ACHIEVEMENTS
+// ============================================
 
 export function getAchievements(): Achievements {
   const saved = localStorage.getItem(ACHIEVEMENTS_KEY);
@@ -207,7 +547,6 @@ export function updateAchievement(type: "ping" | "jitter" | "download" | "upload
       break;
   }
   saveAchievements(achievements);
-  console.log(`Achievement unlocked: ${type}`);
   return achievements;
 }
 

@@ -1,5 +1,5 @@
-// Home.tsx - CLEAN FINAL VERSION (No High Score)
-import { useEffect, useState } from "react";
+// Home.tsx - FULLY FIXED with automatic network detection and proper ISP handling
+import { useEffect, useState, useRef } from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
 import Insights from "../components/Insights";
@@ -10,6 +10,9 @@ import ComparisonPopup from "../components/ComparisonPopup";
 import NetworkInfo from "../components/NetworkInfo";
 import ShareableResultCard from "../components/ShareableResultCard";
 import ISPInfo from "../components/ISPInfo";
+import SmartInsight from "../components/SmartInsight";
+import HealthAlert from "../components/HealthAlert";
+import RealServerSelector from "../components/RealServerSelector";
 import { 
   getHistory, 
   getBestScore, 
@@ -48,6 +51,11 @@ export default function Home() {
   const [showShareCard, setShowShareCard] = useState(false);
   const [ispInfo, setIspInfo] = useState<ISPInfoType | null>(null);
   const [ispLoading, setIspLoading] = useState(true);
+  const [selectedServer, setSelectedServer] = useState(() => {
+    return localStorage.getItem("selected_server") || "auto";
+  });
+  const [previousIp, setPreviousIp] = useState<string>("");
+  const [originalIspName, setOriginalIspName] = useState<string>("");
   
   const [celebration, setCelebration] = useState<{
     show: boolean;
@@ -62,6 +70,8 @@ export default function Home() {
   } | null>(null);
   
   const [lastProcessedTestId, setLastProcessedTestId] = useState<string>("");
+  
+  const isISPUpdatingRef = useRef(false);
 
   const {
     ping,
@@ -86,7 +96,76 @@ export default function Home() {
     autoRun,
     setAutoRun,
     monitorPing,
+    timePattern,
   } = useSpeedTest();
+
+  // ============================================
+  // ISP REFRESH FUNCTIONS
+  // ============================================
+
+  const refreshISPInfo = async () => {
+    console.log("🔄 Refreshing ISP info...");
+    // Force fresh detection by clearing cache first
+    localStorage.removeItem("cached_isp_info");
+    const info = await detectISP();
+    if (info) {
+      console.log("✅ ISP info refreshed:", info.isp);
+      setIspInfo(info);
+      setPreviousIp(info.ip || "");
+      setOriginalIspName(info.isp || "");
+      localStorage.setItem("cached_isp_info", JSON.stringify({ ...info, timestamp: Date.now() }));
+    }
+  };
+
+  // ============================================
+  // NETWORK CHANGE DETECTION
+  // ============================================
+
+  // Detect network changes by comparing IP
+  useEffect(() => {
+    const checkNetworkChange = async () => {
+      const currentIp = ispInfo?.ip;
+      if (currentIp && previousIp && currentIp !== previousIp) {
+        console.log("🌐 Network changed! IP changed from", previousIp, "to", currentIp);
+        localStorage.removeItem("cached_isp_info");
+        await refreshISPInfo();
+      }
+      if (currentIp) {
+        setPreviousIp(currentIp);
+      }
+    };
+    checkNetworkChange();
+  }, [ispInfo?.ip]);
+
+  // Periodic network check (every 15 seconds)
+  // useEffect(() => {
+  //   const interval = setInterval(async () => {
+  //     // Only run if tab is visible to save resources
+  //     if (!isTabVisible) return;
+      
+  //     try {
+  //       const response = await fetch('https://api.ipify.org?format=json');
+  //       const data = await response.json();
+  //       const currentIp = data.ip;
+  //       const storedIp = ispInfo?.ip;
+        
+  //       if (storedIp && currentIp && storedIp !== currentIp) {
+  //         console.log("🌐 Network change detected via periodic check!");
+  //         console.log("Old IP:", storedIp, "New IP:", currentIp);
+  //         localStorage.removeItem("cached_isp_info");
+  //         await refreshISPInfo();
+  //       }
+  //     } catch (error) {
+  //       // Silent fail - network request may fail, that's fine
+  //     }
+  //   }, 15000);
+    
+  //   return () => clearInterval(interval);
+  // }, [ispInfo?.ip, isTabVisible]);
+
+  // ============================================
+  // LIFECYCLE HOOKS
+  // ============================================
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -103,25 +182,32 @@ export default function Home() {
   }, [running, phase, showLiveGraph]);
 
   const handleManualISPUpdate = (isp: string) => {
+    isISPUpdatingRef.current = true;
+    
     localStorage.setItem("manual_isp", isp);
     if (ispInfo) {
       const updatedISP = { ...ispInfo, isp: isp, timestamp: Date.now() };
       setIspInfo(updatedISP);
       localStorage.setItem("cached_isp_info", JSON.stringify(updatedISP));
     }
+    
+    setTimeout(() => {
+      isISPUpdatingRef.current = false;
+    }, 500);
   };
 
+  // Load ISP on page load - force fresh detection
   useEffect(() => {
     const loadISP = async () => {
       setIspLoading(true);
-      const cached = getCachedISP();
-      if (cached && cached.isp !== "Unknown" && cached.isp !== "ISP information unavailable") {
-        setIspInfo(cached);
-        setIspLoading(false);
-        return;
-      }
+      localStorage.removeItem("cached_isp_info");
       const info = await detectISP();
-      if (info) setIspInfo(info);
+      if (info) {
+        setIspInfo(info);
+        setPreviousIp(info.ip || "");
+        setOriginalIspName(info.isp || "");
+        localStorage.setItem("cached_isp_info", JSON.stringify({ ...info, timestamp: Date.now() }));
+      }
       setIspLoading(false);
     };
     loadISP();
@@ -141,13 +227,19 @@ export default function Home() {
     setComparisonPopup(null);
   };
 
-  const formatValue = (value: number, type: string) => {
-    if (type === "ping") return `${value.toFixed(1)} ms`;
-    if (value > 1000) return `${(value / 1000).toFixed(1)} Gbps`;
-    return `${value.toFixed(1)} Mbps`;
+  const handleServerChange = (serverId: string, baseUrl: string) => {
+    setSelectedServer(serverId);
+    localStorage.setItem("selected_server", serverId);
+    localStorage.setItem("selected_server_url", baseUrl);
+    console.log(`Server changed to: ${serverId} with URL: ${baseUrl}`);
   };
 
+  // Save test result and show popups
   useEffect(() => {
+    if (isISPUpdatingRef.current) {
+      return;
+    }
+    
     if (phase !== "complete" || score === null || download === null || upload === null || ping === null) {
       return;
     }
@@ -164,9 +256,8 @@ export default function Home() {
     
     const currentAchievements = getAchievements();
     
-    // Save the result
-    const manualISP = localStorage.getItem("manual_isp");
-    const finalIsp = manualISP || ispInfo?.isp || "Unknown";
+    // Use the ORIGINAL ISP name for saving to history
+    const finalIsp = originalIspName || ispInfo?.isp || "Unknown";
     const finalNetworkType = networkType || "unknown";
     
     const testResult: SpeedTestRecord = {
@@ -178,13 +269,13 @@ export default function Home() {
       score: score,
       isp: finalIsp,
       networkType: finalNetworkType,
+      hour: new Date().getHours(),
     };
     
     saveResult(testResult);
     saveBestScore(score);
     saveBestStats(score, download, upload, ping);
     
-    // Get history for comparison popup
     const historyList = getHistory();
     let comparisonData = null;
     
@@ -194,48 +285,37 @@ export default function Home() {
       
       const improvements = [];
       
-      if (currentTest.download !== previousTest.download) {
-        improvements.push({
-          type: "download",
-          oldValue: previousTest.download,
-          newValue: currentTest.download,
-          improved: currentTest.download > previousTest.download
-        });
-      }
+      improvements.push({
+        type: "download",
+        oldValue: previousTest.download,
+        newValue: currentTest.download,
+        improved: currentTest.download > previousTest.download
+      });
       
-      if (currentTest.upload !== previousTest.upload) {
-        improvements.push({
-          type: "upload",
-          oldValue: previousTest.upload,
-          newValue: currentTest.upload,
-          improved: currentTest.upload > previousTest.upload
-        });
-      }
+      improvements.push({
+        type: "upload",
+        oldValue: previousTest.upload,
+        newValue: currentTest.upload,
+        improved: currentTest.upload > previousTest.upload
+      });
       
-      if (currentTest.ping !== previousTest.ping) {
-        improvements.push({
-          type: "ping",
-          oldValue: previousTest.ping,
-          newValue: currentTest.ping,
-          improved: currentTest.ping < previousTest.ping
-        });
-      }
+      improvements.push({
+        type: "ping",
+        oldValue: previousTest.ping,
+        newValue: currentTest.ping,
+        improved: currentTest.ping < previousTest.ping
+      });
       
-      if (currentTest.score !== previousTest.score) {
-        improvements.push({
-          type: "score",
-          oldValue: previousTest.score,
-          newValue: currentTest.score,
-          improved: currentTest.score > previousTest.score
-        });
-      }
+      improvements.push({
+        type: "score",
+        oldValue: previousTest.score,
+        newValue: currentTest.score,
+        improved: currentTest.score > previousTest.score
+      });
       
-      if (improvements.length > 0) {
-        comparisonData = { improvements };
-      }
+      comparisonData = { improvements };
     }
     
-    // Check for achievements
     const newAchievements: { type: string; value: number }[] = [];
     
     if (!currentAchievements.hasRunPing && ping > 0) {
@@ -255,13 +335,11 @@ export default function Home() {
       updateAchievement("upload");
     }
     
-    // Update local state
     setBestScore(getBestScore());
     setBestStats(getBestStats());
     setHistory(getHistory());
     setAchievements(getAchievements());
     
-    // Show popups
     if (newAchievements.length > 0) {
       const achievementRecords: RecordBreak[] = newAchievements.map(a => ({
         type: a.type === "jitter" ? "ping" : a.type,
@@ -277,7 +355,7 @@ export default function Home() {
       });
       setLastProcessedTestId(testId);
     } 
-    else if (comparisonData) {
+    else if (comparisonData && historyList.length >= 2) {
       setComparisonPopup({
         show: true,
         improvements: comparisonData.improvements
@@ -285,11 +363,13 @@ export default function Home() {
       setLastProcessedTestId(testId);
     }
     
-  }, [phase, score, download, upload, ping, jitter, networkType, ispInfo, running]);
+  }, [phase, score, download, upload, ping, jitter, networkType, ispInfo, running, originalIspName]);
 
   // History sync
   useEffect(() => {
     const interval = setInterval(() => {
+      if (isISPUpdatingRef.current) return;
+      
       const newHistory = getHistory();
       if (JSON.stringify(newHistory) !== JSON.stringify(history)) {
         setHistory(newHistory);
@@ -311,10 +391,38 @@ export default function Home() {
     return `${value.toFixed(1)} Mbps`;
   };
 
-  const handleRunTest = () => {
-    const finalIsp = ispInfo?.isp || "Unknown";
+  // CRITICAL FIX: Refresh ISP BEFORE running the test
+  const handleRunTest = async () => {
+    console.log("🔄 Refreshing ISP before test...");
+    
+    // Force fresh ISP detection before running the test
+    localStorage.removeItem("cached_isp_info");
+    const freshInfo = await detectISP();
+    
+    let currentOriginalIsp = "Unknown";
+    let currentIp = "unknown";
+    
+    if (freshInfo) {
+      currentOriginalIsp = freshInfo.isp || "Unknown";
+      currentIp = freshInfo.ip || "unknown";
+      // Update state with fresh info
+      setOriginalIspName(currentOriginalIsp);
+      setIspInfo(freshInfo);
+      setPreviousIp(currentIp);
+      localStorage.setItem("cached_isp_info", JSON.stringify({ ...freshInfo, timestamp: Date.now() }));
+    } else {
+      // Fallback to existing values
+      currentOriginalIsp = originalIspName || ispInfo?.isp || "Unknown";
+      currentIp = ispInfo?.ip || "unknown";
+    }
+    
     const finalNetworkType = networkType || "unknown";
-    runTest("manual", testSelection, finalIsp, finalNetworkType);
+    
+    console.log("🚀 Running test with ISP:", currentOriginalIsp);
+    console.log("📡 IP:", currentIp);
+    
+    // Run the test with the fresh ISP info
+    runTest("manual", testSelection, currentOriginalIsp, undefined, finalNetworkType, currentIp);
   };
 
   const getBackgroundStyle = () => {
@@ -345,6 +453,28 @@ export default function Home() {
           gap: "12px",
         }}
       >
+        <div
+          style={{
+            background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+            borderRadius: "12px",
+            padding: "10px 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            fontSize: "11px",
+            color: "#92400e",
+            border: "1px solid #fbbf24",
+          }}
+        >
+          <span style={{ fontSize: "16px" }}>📍</span>
+          <div style={{ flex: 1 }}>
+            <strong>ℹ️ Single-Region Test</strong> — Results may vary based on your distance from our test server.
+            <span style={{ fontSize: "10px", opacity: 0.8, display: "block", marginTop: "2px" }}>
+              For best results, test multiple times at different hours.
+            </span>
+          </div>
+        </div>
+
         {!ispLoading && ispInfo && (
           <ISPInfo 
             ispInfo={ispInfo}
@@ -391,6 +521,14 @@ export default function Home() {
 
         <NetworkInfo triggerRefresh={testCompleted} onNetworkDetected={(type) => console.log("Network type:", type)} />
 
+        {timePattern && <HealthAlert pattern={timePattern} />}
+
+        {!isTestActive && score !== null && (
+          <SmartInsight 
+            metrics={{ ping, download, upload, jitter, bufferbloat, networkType, score }} 
+          />
+        )}
+
         <Hero
           score={score}
           ping={ping}
@@ -408,6 +546,8 @@ export default function Home() {
           showLiveGraph={showLiveGraph}
           onToggleLiveGraph={() => setShowLiveGraph(!showLiveGraph)}
         />
+
+        <RealServerSelector onServerChange={handleServerChange} currentServerId={selectedServer} />
 
         {!isTestActive && score !== null && (
           <button
@@ -502,6 +642,33 @@ export default function Home() {
             onClose={() => setShowShareCard(false)}
           />
         )}
+
+        <div
+          style={{
+            marginTop: "8px",
+            marginBottom: "16px",
+            padding: "10px 12px",
+            background: "rgba(139,92,246,0.08)",
+            borderRadius: "10px",
+            border: "1px solid rgba(139,92,246,0.15)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginBottom: "4px" }}>
+            <span style={{ fontSize: "12px" }}>🔬</span>
+            <span style={{ fontSize: "11px", fontWeight: "500", color: "#6d28d9" }}>
+              Early Access Feature
+            </span>
+            <span style={{ fontSize: "12px" }}>💡</span>
+          </div>
+          <p style={{ fontSize: "10px", color: "#4c1d95", margin: 0, opacity: 0.8 }}>
+            We're constantly improving accuracy and adding features. 
+            Your feedback helps us build a better speed test! 
+            <span style={{ display: "block", fontSize: "9px", marginTop: "3px", opacity: 0.7 }}>
+              🚀 More servers, advanced analytics, and detailed reports coming soon.
+            </span>
+          </p>
+        </div>
       </div>
 
       <style>{`

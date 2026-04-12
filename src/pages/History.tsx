@@ -5,6 +5,15 @@ import LiveGraph from "../components/LiveGraph";
 import { analyzeTrend, type TrendType } from "../utils/trendAnalyzer";
 import TrendBadge from "../components/TrendBadge";
 
+// Helper function to parse date string
+const parseDate = (dateStr: string): { date: string; time: string } => {
+  const parts = dateStr.split(", ");
+  if (parts.length === 2) {
+    return { date: parts[0], time: parts[1] };
+  }
+  return { date: dateStr, time: "" };
+};
+
 export default function History() {
   const [history, setHistory] = useState<SpeedTestRecord[]>([]);
   const [trend, setTrend] = useState<TrendType>("insufficient");
@@ -14,6 +23,8 @@ export default function History() {
   const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(20);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
 
   useEffect(() => {
     loadHistory();
@@ -40,15 +51,94 @@ export default function History() {
   };
 
   const handleEditISP = (item: SpeedTestRecord) => {
-    const currentISP = item.isp || "Unknown";
-    const newName = prompt("Enter a name for this ISP (e.g., 'Jio Fiber', 'Airtel 5G'):", currentISP);
-    if (newName && newName.trim() && newName !== currentISP) {
-      // Save mapping
-      const originalISP = item.originalIsp || item.isp || currentISP;
-      saveISPMapping(originalISP, newName.trim());
+    const currentName = item.customName || item.isp || "Unknown";
+    const originalISP = item.originalIsp || currentName;
+    const newName = prompt(
+      `Edit network name\n\nYour Name: ${currentName}\nOriginal ISP: ${originalISP}\n\nEnter a custom name for this network:`,
+      currentName
+    );
+    if (newName && newName.trim() && newName !== currentName) {
+      if (item.networkFingerprint) {
+        saveISPMapping(item.networkFingerprint, originalISP, newName.trim());
+      } else {
+        saveISPMapping(originalISP, originalISP, newName.trim());
+      }
       updateHistoryISP(originalISP, newName.trim());
-      loadHistory(); // Reload to show changes
+      loadHistory();
     }
+  };
+
+  const handleExportCSV = () => {
+    const csvRows = [
+      ["Date", "Time", "Your Name", "Original ISP", "Network Type", "Ping (ms)", "Jitter (ms)", "Download (Mbps)", "Upload (Mbps)", "Score"],
+      ...filteredHistory.map(h => {
+        const { date, time } = parseDate(h.date);
+        return [
+          date,
+          time,
+          h.customName || h.isp || "Unknown",
+          h.originalIsp || "Unknown",
+          h.networkType || "Unknown",
+          h.ping,
+          h.jitter,
+          h.download,
+          h.upload,
+          h.score || ""
+        ];
+      })
+    ];
+    
+    const csvContent = csvRows.map(row => row.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `speed-test-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportCSV = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split("\n");
+      
+      const importedRecords: SpeedTestRecord[] = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const values = lines[i].split(",");
+        if (values.length >= 8 && values[0]) {
+          const dateStr = `${values[0]}, ${values[1]}`;
+          importedRecords.push({
+            date: dateStr,
+            ping: parseFloat(values[5]),
+            jitter: parseFloat(values[6]),
+            download: parseFloat(values[7]),
+            upload: parseFloat(values[8]),
+            score: parseInt(values[9]) || 0,
+            customName: values[2] !== "Unknown" ? values[2] : undefined,
+            originalIsp: values[3] !== "Unknown" ? values[3] : undefined,
+            networkType: values[4] !== "Unknown" ? values[4].toLowerCase() : undefined,
+          });
+        }
+      }
+      
+      const existingHistory = getHistory();
+      const allHistory = [...importedRecords, ...existingHistory];
+      
+      const uniqueHistory = allHistory.filter((record, index, self) =>
+        index === self.findIndex(r => r.date === record.date && r.ping === record.ping)
+      );
+      
+      uniqueHistory.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      localStorage.setItem("speed_test_history", JSON.stringify(uniqueHistory));
+      loadHistory();
+      setShowImportConfirm(false);
+      setImportFile(null);
+    };
+    reader.readAsText(file);
   };
 
   const formatSpeed = (value: number) => {
@@ -169,15 +259,17 @@ export default function History() {
   };
 
   const filteredHistory = filterHistoryByTimeRange();
-  
-  // Pagination
   const totalFilteredPages = Math.ceil(filteredHistory.length / itemsPerPage);
   const paginatedHistory = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-  
   const metricData = getMetricData();
   const bestValue = getBestValue();
   const worstValue = getWorstValue();
   const averageValue = getAverageValue();
+
+  // Helper to check if ISP is customized
+  const isCustomized = (record: SpeedTestRecord) => {
+    return record.originalIsp && record.originalIsp !== (record.customName || record.isp);
+  };
 
   return (
     <div
@@ -197,20 +289,10 @@ export default function History() {
           boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
         }}
       >
-        {/* Header with Clear History Button */}
+        {/* Header */}
         <div style={{ marginBottom: "28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "16px" }}>
           <div>
-            <h1
-              style={{
-                fontSize: "clamp(24px, 6vw, 32px)",
-                fontWeight: "bold",
-                color: "#1e293b",
-                marginBottom: "8px",
-                display: "flex",
-                alignItems: "center",
-                gap: "12px",
-              }}
-            >
+            <h1 style={{ fontSize: "clamp(24px, 6vw, 32px)", fontWeight: "bold", color: "#1e293b", marginBottom: "8px", display: "flex", alignItems: "center", gap: "12px" }}>
               <span>📊</span> History Dashboard
               <span style={{ fontSize: "14px", fontWeight: "normal", color: "#64748b" }}>
                 {filteredHistory.length} tests
@@ -221,90 +303,49 @@ export default function History() {
             </p>
           </div>
           
-          {history.length > 0 && (
-            <button
-              onClick={() => setShowClearConfirm(true)}
-              style={{
-                padding: "8px 16px",
-                background: "#ef4444",
-                border: "none",
-                borderRadius: "8px",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-              }}
-            >
-              🗑️ Clear All History
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button onClick={() => setShowImportConfirm(true)} style={{ padding: "8px 16px", background: "#3b82f6", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
+              📤 Import CSV
             </button>
-          )}
+            {history.length > 0 && (
+              <>
+                <button onClick={handleExportCSV} style={{ padding: "8px 16px", background: "#10b981", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
+                  📥 Export CSV
+                </button>
+                <button onClick={() => setShowClearConfirm(true)} style={{ padding: "8px 16px", background: "#ef4444", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "13px", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
+                  🗑️ Clear All
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Clear History Confirmation Modal */}
+        {/* Import Modal */}
+        {showImportConfirm && (
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowImportConfirm(false)}>
+            <div style={{ background: "white", borderRadius: "20px", padding: "24px", maxWidth: "400px", width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ fontSize: "48px", marginBottom: "16px" }}>📤</div>
+              <h3 style={{ marginBottom: "8px" }}>Import CSV File</h3>
+              <p style={{ color: "#64748b", marginBottom: "16px", fontSize: "12px" }}>Select a CSV file exported from this app to import your test history.</p>
+              <input aria-label="csv importer" type="file" accept=".csv" onChange={(e) => { if (e.target.files && e.target.files[0]) setImportFile(e.target.files[0]); }} style={{ width: "100%", padding: "10px", border: "1px solid #e2e8f0", borderRadius: "8px", marginBottom: "16px" }} />
+              <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+                <button onClick={() => setShowImportConfirm(false)} style={{ padding: "10px 20px", background: "#f1f5f9", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}>Cancel</button>
+                <button onClick={() => { if (importFile) handleImportCSV(importFile); else alert("Please select a CSV file first"); }} style={{ padding: "10px 20px", background: "#3b82f6", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "14px" }}>Import</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clear Modal */}
         {showClearConfirm && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0,0,0,0.5)",
-              backdropFilter: "blur(4px)",
-              zIndex: 1000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={() => setShowClearConfirm(false)}
-          >
-            <div
-              style={{
-                background: "white",
-                borderRadius: "20px",
-                padding: "24px",
-                maxWidth: "400px",
-                width: "90%",
-                textAlign: "center",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowClearConfirm(false)}>
+            <div style={{ background: "white", borderRadius: "20px", padding: "24px", maxWidth: "400px", width: "90%", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
               <div style={{ fontSize: "48px", marginBottom: "16px" }}>⚠️</div>
               <h3 style={{ marginBottom: "8px" }}>Clear All History?</h3>
-              <p style={{ color: "#64748b", marginBottom: "24px" }}>
-                This action cannot be undone. All your speed test results will be permanently deleted.
-              </p>
+              <p style={{ color: "#64748b", marginBottom: "24px" }}>This action cannot be undone. All your speed test results will be permanently deleted.</p>
               <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-                <button
-                  onClick={() => setShowClearConfirm(false)}
-                  style={{
-                    padding: "10px 20px",
-                    background: "#f1f5f9",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleClearHistory}
-                  style={{
-                    padding: "10px 20px",
-                    background: "#ef4444",
-                    border: "none",
-                    borderRadius: "8px",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  Yes, Clear All
-                </button>
+                <button onClick={() => setShowClearConfirm(false)} style={{ padding: "10px 20px", background: "#f1f5f9", border: "none", borderRadius: "8px", cursor: "pointer", fontSize: "14px" }}>Cancel</button>
+                <button onClick={handleClearHistory} style={{ padding: "10px 20px", background: "#ef4444", border: "none", borderRadius: "8px", color: "#fff", cursor: "pointer", fontSize: "14px" }}>Yes, Clear All</button>
               </div>
             </div>
           </div>
@@ -314,42 +355,14 @@ export default function History() {
         {trend !== "insufficient" && <TrendBadge trend={trend} />}
 
         {/* Time Range Filter */}
-        <div
-          style={{
-            display: "flex",
-            gap: "10px",
-            marginBottom: "24px",
-            flexWrap: "wrap",
-            justifyContent: "center",
-          }}
-        >
+        <div style={{ display: "flex", gap: "10px", marginBottom: "24px", flexWrap: "wrap", justifyContent: "center" }}>
           {[
             { value: "all", label: "All Time", icon: "📅" },
             { value: "week", label: "Last 7 Days", icon: "📆" },
             { value: "month", label: "Last 30 Days", icon: "📆" },
             { value: "year", label: "Last Year", icon: "📅" },
           ].map((range) => (
-            <button
-              key={range.value}
-              onClick={() => {
-                setTimeRange(range.value as any);
-                setCurrentPage(1);
-              }}
-              style={{
-                padding: "8px 16px",
-                background: timeRange === range.value ? "#3b82f6" : "#f1f5f9",
-                color: timeRange === range.value ? "#fff" : "#475569",
-                border: "none",
-                borderRadius: "40px",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: "500",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                transition: "all 0.2s",
-              }}
-            >
+            <button key={range.value} onClick={() => { setTimeRange(range.value as any); setCurrentPage(1); }} style={{ padding: "8px 16px", background: timeRange === range.value ? "#3b82f6" : "#f1f5f9", color: timeRange === range.value ? "#fff" : "#475569", border: "none", borderRadius: "40px", cursor: "pointer", fontSize: "13px", fontWeight: "500", display: "flex", alignItems: "center", gap: "6px" }}>
               <span>{range.icon}</span> {range.label}
             </button>
           ))}
@@ -357,423 +370,109 @@ export default function History() {
 
         {/* Summary Stats Cards */}
         {filteredHistory.length > 0 && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-              gap: "16px",
-              marginBottom: "32px",
-            }}
-          >
-            <StatCard
-              title="Total Tests"
-              value={filteredHistory.length.toString()}
-              icon="🔬"
-              color="#64748b"
-              trend={null}
-            />
-            <StatCard
-              title="Best Download"
-              value={bestValue ? formatSpeed(bestValue) : "--"}
-              icon="⬇️"
-              color="#3b82f6"
-              trend={null}
-            />
-            <StatCard
-              title="Best Upload"
-              value={averageValue ? formatSpeed(averageValue) : "--"}
-              icon="⬆️"
-              color="#f59e0b"
-              trend={null}
-            />
-            <StatCard
-              title="Best Ping"
-              value={averageValue ? formatNumber(averageValue, "ms") : "--"}
-              icon="📡"
-              color="#10b981"
-              trend={null}
-            />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "32px" }}>
+            <StatCard title="Total Tests" value={filteredHistory.length.toString()} icon="🔬" color="#64748b" trend={null} />
+            <StatCard title="Best Download" value={bestValue ? formatSpeed(bestValue) : "--"} icon="⬇️" color="#3b82f6" trend={null} />
+            <StatCard title="Average Download" value={averageValue ? formatSpeed(averageValue) : "--"} icon="📊" color="#f59e0b" trend={null} />
+            <StatCard title="Best Ping" value={bestValue && selectedMetric === "ping" ? formatNumber(bestValue, "ms") : averageValue ? formatNumber(averageValue, "ms") : "--"} icon="📡" color="#10b981" trend={null} />
           </div>
         )}
 
         {/* Metric Selector & Graph */}
         {filteredHistory.length > 0 && (
           <div style={{ marginBottom: "40px" }}>
-            <div
-              style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "10px",
-                marginBottom: "20px",
-                justifyContent: "center",
-              }}
-            >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginBottom: "20px", justifyContent: "center" }}>
               {["download", "upload", "ping", "jitter", "score"].map((metric) => (
-                <button
-                  key={metric}
-                  onClick={() => setSelectedMetric(metric as any)}
-                  style={{
-                    padding: "10px 20px",
-                    background: selectedMetric === metric ? getMetricColor(metric) : "#f1f5f9",
-                    color: selectedMetric === metric ? "#fff" : "#475569",
-                    border: "none",
-                    borderRadius: "40px",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    transition: "all 0.2s",
-                  }}
-                >
+                <button key={metric} onClick={() => setSelectedMetric(metric as any)} style={{ padding: "10px 20px", background: selectedMetric === metric ? getMetricColor(metric) : "#f1f5f9", color: selectedMetric === metric ? "#fff" : "#475569", border: "none", borderRadius: "40px", cursor: "pointer", fontSize: "14px", fontWeight: "500", display: "flex", alignItems: "center", gap: "8px" }}>
                   <span>{getMetricIcon(metric)}</span> {getMetricLabel(metric)}
                 </button>
               ))}
             </div>
 
-            {/* Graph */}
-            <div
-              style={{
-                background: "#f8fafc",
-                borderRadius: "20px",
-                padding: "20px",
-                marginBottom: "20px",
-              }}
-            >
+            <div style={{ background: "#f8fafc", borderRadius: "20px", padding: "20px", marginBottom: "20px" }}>
               <div style={{ height: "300px" }}>
-                <LiveGraph
-                  speeds={metricData}
-                  label={getMetricLabel(selectedMetric)}
-                  graphType={selectedMetric === "ping" || selectedMetric === "jitter" ? "ping" : selectedMetric === "download" ? "download" : "upload"}
-                />
+                <LiveGraph speeds={metricData} label={getMetricLabel(selectedMetric)} graphType={selectedMetric === "ping" || selectedMetric === "jitter" ? "ping" : selectedMetric === "download" ? "download" : "upload"} />
               </div>
             </div>
 
-            {/* Statistics Summary */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                gap: "12px",
-                background: "#f8fafc",
-                borderRadius: "16px",
-                padding: "16px",
-              }}
-            >
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748b" }}>Best</div>
-                <div style={{ fontSize: "20px", fontWeight: "bold", color: getMetricColor(selectedMetric) }}>
-                  {bestValue !== null ? (
-                    selectedMetric === "ping" || selectedMetric === "jitter" 
-                      ? `${bestValue.toFixed(1)} ${getMetricUnit(selectedMetric)}`
-                      : selectedMetric === "score"
-                      ? `${bestValue.toFixed(0)}/${getMetricUnit(selectedMetric)}`
-                      : formatSpeed(bestValue)
-                  ) : "--"}
-                </div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748b" }}>Average</div>
-                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#1e293b" }}>
-                  {averageValue !== null ? (
-                    selectedMetric === "ping" || selectedMetric === "jitter"
-                      ? `${averageValue.toFixed(1)} ${getMetricUnit(selectedMetric)}`
-                      : selectedMetric === "score"
-                      ? `${averageValue.toFixed(0)}/${getMetricUnit(selectedMetric)}`
-                      : formatSpeed(averageValue)
-                  ) : "--"}
-                </div>
-              </div>
-              <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: "11px", color: "#64748b" }}>Worst</div>
-                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#ef4444" }}>
-                  {worstValue !== null ? (
-                    selectedMetric === "ping" || selectedMetric === "jitter"
-                      ? `${worstValue.toFixed(1)} ${getMetricUnit(selectedMetric)}`
-                      : selectedMetric === "score"
-                      ? `${worstValue.toFixed(0)}/${getMetricUnit(selectedMetric)}`
-                      : formatSpeed(worstValue)
-                  ) : "--"}
-                </div>
-              </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px", background: "#f8fafc", borderRadius: "16px", padding: "16px" }}>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: "11px", color: "#64748b" }}>Best</div><div style={{ fontSize: "20px", fontWeight: "bold", color: getMetricColor(selectedMetric) }}>{bestValue !== null ? (selectedMetric === "ping" || selectedMetric === "jitter" ? `${bestValue.toFixed(1)} ${getMetricUnit(selectedMetric)}` : selectedMetric === "score" ? `${bestValue.toFixed(0)}/${getMetricUnit(selectedMetric)}` : formatSpeed(bestValue)) : "--"}</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: "11px", color: "#64748b" }}>Average</div><div style={{ fontSize: "20px", fontWeight: "bold", color: "#1e293b" }}>{averageValue !== null ? (selectedMetric === "ping" || selectedMetric === "jitter" ? `${averageValue.toFixed(1)} ${getMetricUnit(selectedMetric)}` : selectedMetric === "score" ? `${averageValue.toFixed(0)}/${getMetricUnit(selectedMetric)}` : formatSpeed(averageValue)) : "--"}</div></div>
+              <div style={{ textAlign: "center" }}><div style={{ fontSize: "11px", color: "#64748b" }}>Worst</div><div style={{ fontSize: "20px", fontWeight: "bold", color: "#ef4444" }}>{worstValue !== null ? (selectedMetric === "ping" || selectedMetric === "jitter" ? `${worstValue.toFixed(1)} ${getMetricUnit(selectedMetric)}` : selectedMetric === "score" ? `${worstValue.toFixed(0)}/${getMetricUnit(selectedMetric)}` : formatSpeed(worstValue)) : "--"}</div></div>
             </div>
           </div>
         )}
 
-        {/* Table with Pagination */}
+        {/* Table with separate columns */}
         <div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-              flexWrap: "wrap",
-              gap: "12px",
-            }}
-          >
-            <h2
-              style={{
-                fontSize: "18px",
-                fontWeight: "600",
-                color: "#1e293b",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
-            >
-              <span>📜</span> Test History
-            </h2>
-            <div style={{ fontSize: "12px", color: "#64748b" }}>
-              Showing {paginatedHistory.length} of {filteredHistory.length} tests
-            </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
+            <h2 style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", display: "flex", alignItems: "center", gap: "8px" }}><span>📜</span> Test History</h2>
+            <div style={{ fontSize: "12px", color: "#64748b" }}>Showing {paginatedHistory.length} of {filteredHistory.length} tests</div>
           </div>
 
           <div style={{ overflowX: "auto" }}>
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: "13px",
-              }}
-            >
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
               <thead>
-                <tr
-                  style={{
-                    background: "#f1f5f9",
-                    borderBottom: "2px solid #e2e8f0",
-                  }}
-                >
+                <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #e2e8f0" }}>
                   <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>Date</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>ISP</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Network</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Ping</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Jitter</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Download</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Upload</th>
-                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>Score</th>
+                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>Time</th>
+                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>🏷️ Your Name</th>
+                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>🏢 Original ISP</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>📶 Type</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>📡 Ping</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>⚡ Jitter</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>⬇️ Download</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>⬆️ Upload</th>
+                  <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>⭐ Score</th>
+                  <th style={{ padding: "12px", textAlign: "center", color: "#475569" }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedHistory.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={8}
-                      style={{
-                        textAlign: "center",
-                        padding: "60px",
-                        color: "#94a3b8",
-                      }}
-                    >
-                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div>
-                      <div>No data available for this time period.</div>
-                      <div style={{ fontSize: "12px", marginTop: "8px" }}>
-                        Run a speed test to see results!
-                      </div>
-                    </td>
-                  </tr>
+                  <tr><td colSpan={11} style={{ textAlign: "center", padding: "60px", color: "#94a3b8" }}><div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div><div>No data available for this time period.</div><div style={{ fontSize: "12px", marginTop: "8px" }}>Run a speed test to see results!</div></td></tr>
                 ) : (
-                  paginatedHistory.map((item, index) => (
-                    <tr
-                      key={index}
-                      style={{
-                        borderBottom: "1px solid #e2e8f0",
-                        transition: "background 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "#f8fafc";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      <td style={{ padding: "12px", color: "#64748b", whiteSpace: "nowrap" }}>
-                        {item.date}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontSize: "11px" }}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "6px" }}>
-                          <span style={{ color: "#64748b" }}>
-                            {item.isp && item.isp !== "Unknown" ? item.isp.slice(0, 25) : "—"}
+                  paginatedHistory.map((item, index) => {
+                    const { date, time } = parseDate(item.date);
+                    const customized = isCustomized(item);
+                    const customName = item.customName || item.isp || "Unknown";
+                    const originalISP = item.originalIsp || "Unknown";
+                    
+                    return (
+                      <tr key={index} style={{ borderBottom: "1px solid #e2e8f0", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                        <td style={{ padding: "12px", color: "#64748b", whiteSpace: "nowrap" }}>{date}</td>
+                        <td style={{ padding: "12px", color: "#94a3b8", fontSize: "11px", whiteSpace: "nowrap" }}>{time}</td>
+                        <td style={{ padding: "12px", textAlign: "left" }}>
+                          <span style={{ fontWeight: customized ? "600" : "400", color: "#1e293b" }}>
+                            {customName}
                           </span>
-                          {item.isp && item.isp !== "Unknown" && (
-                            <button
-                              onClick={() => handleEditISP(item)}
-                              style={{
-                                background: "none",
-                                border: "none",
-                                cursor: "pointer",
-                                fontSize: "12px",
-                                padding: "2px 4px",
-                                color: "#3b82f6",
-                              }}
-                              title="Edit ISP Name"
-                            >
-                              ✏️
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontSize: "11px", color: "#64748b" }}>
-                        {item.networkType ? item.networkType.toUpperCase() : "—"}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontWeight: "500" }}>
-                        {item.ping} ms
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", color: "#64748b" }}>
-                        {item.jitter} ms
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontWeight: "500", color: "#3b82f6" }}>
-                        {formatSpeed(item.download)}
-                      </td>
-                      <td style={{ padding: "12px", textAlign: "right", fontWeight: "500", color: "#f59e0b" }}>
-                        {formatSpeed(item.upload)}
-                      </td>
-                      <td
-                        style={{
-                          padding: "12px",
-                          textAlign: "right",
-                          fontWeight: "bold",
-                          color: item.score ? getScoreColor(item.score) : "#64748b",
-                        }}
-                      >
-                        {item.score ?? "--"}
-                      </td>
-                    </tr>
-                  ))
+                          {customized && <span style={{ fontSize: "10px", color: "#10b981", marginLeft: "6px" }}>✏️</span>}
+                        </td>
+                        <td style={{ padding: "12px", textAlign: "left", fontSize: "11px", color: "#64748b" }}>{originalISP}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontSize: "11px", color: "#64748b" }}>{item.networkType ? item.networkType.toUpperCase() : "—"}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "500" }}>{item.ping} ms</td>
+                        <td style={{ padding: "12px", textAlign: "right", color: "#64748b" }}>{item.jitter} ms</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "500", color: "#3b82f6" }}>{formatSpeed(item.download)}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "500", color: "#f59e0b" }}>{formatSpeed(item.upload)}</td>
+                        <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", color: item.score ? getScoreColor(item.score) : "#64748b" }}>{item.score ?? "--"}</td>
+                        <td style={{ padding: "12px", textAlign: "center" }}>
+                          <button onClick={() => handleEditISP(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "4px 8px", borderRadius: "6px", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#e2e8f0"} onMouseLeave={(e) => e.currentTarget.style.background = "none"} title="Edit Network Name">✏️</button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
 
-          {/* Pagination Controls */}
+          {/* Pagination */}
           {totalFilteredPages > 1 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-                gap: "8px",
-                marginTop: "24px",
-                flexWrap: "wrap",
-              }}
-            >
-              <button
-                onClick={() => setCurrentPage(1)}
-                disabled={currentPage === 1}
-                style={{
-                  padding: "8px 12px",
-                  background: currentPage === 1 ? "#f1f5f9" : "#e2e8f0",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                  fontSize: "12px",
-                  opacity: currentPage === 1 ? 0.5 : 1,
-                }}
-              >
-                ⏮ First
-              </button>
-              <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                disabled={currentPage === 1}
-                style={{
-                  padding: "8px 12px",
-                  background: currentPage === 1 ? "#f1f5f9" : "#e2e8f0",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: currentPage === 1 ? "not-allowed" : "pointer",
-                  fontSize: "12px",
-                  opacity: currentPage === 1 ? 0.5 : 1,
-                }}
-              >
-                ◀ Prev
-              </button>
-              <span style={{ fontSize: "13px", color: "#475569" }}>
-                Page {currentPage} of {totalFilteredPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage(prev => Math.min(totalFilteredPages, prev + 1))}
-                disabled={currentPage === totalFilteredPages}
-                style={{
-                  padding: "8px 12px",
-                  background: currentPage === totalFilteredPages ? "#f1f5f9" : "#e2e8f0",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: currentPage === totalFilteredPages ? "not-allowed" : "pointer",
-                  fontSize: "12px",
-                  opacity: currentPage === totalFilteredPages ? 0.5 : 1,
-                }}
-              >
-                Next ▶
-              </button>
-              <button
-                onClick={() => setCurrentPage(totalFilteredPages)}
-                disabled={currentPage === totalFilteredPages}
-                style={{
-                  padding: "8px 12px",
-                  background: currentPage === totalFilteredPages ? "#f1f5f9" : "#e2e8f0",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: currentPage === totalFilteredPages ? "not-allowed" : "pointer",
-                  fontSize: "12px",
-                  opacity: currentPage === totalFilteredPages ? 0.5 : 1,
-                }}
-              >
-                Last ⏭
-              </button>
-            </div>
-          )}
-
-          {/* Export Button */}
-          {filteredHistory.length > 0 && (
-            <div style={{ marginTop: "24px", textAlign: "center" }}>
-              <button
-                onClick={() => {
-                  const csv = [
-                    ["Date", "ISP", "Network", "Ping (ms)", "Jitter (ms)", "Download (Mbps)", "Upload (Mbps)", "Score"],
-                    ...filteredHistory.map(h => [
-                      h.date,
-                      h.isp || "Unknown",
-                      h.networkType || "Unknown",
-                      h.ping,
-                      h.jitter,
-                      h.download,
-                      h.upload,
-                      h.score || ""
-                    ])
-                  ].map(row => row.join(",")).join("\n");
-                  
-                  const blob = new Blob([csv], { type: "text/csv" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a");
-                  a.href = url;
-                  a.download = `speed-test-history-${new Date().toISOString().slice(0, 10)}.csv`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                }}
-                style={{
-                  padding: "10px 20px",
-                  background: "#f1f5f9",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "12px",
-                  cursor: "pointer",
-                  fontSize: "13px",
-                  fontWeight: "500",
-                  color: "#475569",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  transition: "all 0.2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "#e2e8f0";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "#f1f5f9";
-                }}
-              >
-                📥 Export as CSV
-              </button>
+            <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "8px", marginTop: "24px", flexWrap: "wrap" }}>
+              <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} style={{ padding: "8px 12px", background: currentPage === 1 ? "#f1f5f9" : "#e2e8f0", border: "none", borderRadius: "8px", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "12px", opacity: currentPage === 1 ? 0.5 : 1 }}>⏮ First</button>
+              <button onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))} disabled={currentPage === 1} style={{ padding: "8px 12px", background: currentPage === 1 ? "#f1f5f9" : "#e2e8f0", border: "none", borderRadius: "8px", cursor: currentPage === 1 ? "not-allowed" : "pointer", fontSize: "12px", opacity: currentPage === 1 ? 0.5 : 1 }}>◀ Prev</button>
+              <span style={{ fontSize: "13px", color: "#475569" }}>Page {currentPage} of {totalFilteredPages}</span>
+              <button onClick={() => setCurrentPage(prev => Math.min(totalFilteredPages, prev + 1))} disabled={currentPage === totalFilteredPages} style={{ padding: "8px 12px", background: currentPage === totalFilteredPages ? "#f1f5f9" : "#e2e8f0", border: "none", borderRadius: "8px", cursor: currentPage === totalFilteredPages ? "not-allowed" : "pointer", fontSize: "12px", opacity: currentPage === totalFilteredPages ? 0.5 : 1 }}>Next ▶</button>
+              <button onClick={() => setCurrentPage(totalFilteredPages)} disabled={currentPage === totalFilteredPages} style={{ padding: "8px 12px", background: currentPage === totalFilteredPages ? "#f1f5f9" : "#e2e8f0", border: "none", borderRadius: "8px", cursor: currentPage === totalFilteredPages ? "not-allowed" : "pointer", fontSize: "12px", opacity: currentPage === totalFilteredPages ? 0.5 : 1 }}>Last ⏭</button>
             </div>
           )}
         </div>
@@ -785,22 +484,10 @@ export default function History() {
 // Stat Card Component
 function StatCard({ title, value, icon, color, trend }: { title: string; value: string; icon: string; color: string; trend: number | null }) {
   return (
-    <div
-      style={{
-        background: "white",
-        borderRadius: "16px",
-        padding: "16px",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-        border: `1px solid ${color}20`,
-      }}
-    >
+    <div style={{ background: "white", borderRadius: "16px", padding: "16px", boxShadow: "0 2px 8px rgba(0,0,0,0.05)", border: `1px solid ${color}20` }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
         <span style={{ fontSize: "24px" }}>{icon}</span>
-        {trend !== null && (
-          <span style={{ fontSize: "12px", color: trend > 0 ? "#10b981" : "#ef4444" }}>
-            {trend > 0 ? "↑" : "↓"} {Math.abs(trend)}%
-          </span>
-        )}
+        {trend !== null && <span style={{ fontSize: "12px", color: trend > 0 ? "#10b981" : "#ef4444" }}>{trend > 0 ? "↑" : "↓"} {Math.abs(trend)}%</span>}
       </div>
       <div style={{ fontSize: "11px", color: "#64748b", marginBottom: "4px" }}>{title}</div>
       <div style={{ fontSize: "20px", fontWeight: "bold", color }}>{value}</div>

@@ -104,10 +104,34 @@ export function calculateScore(
   upload: number
 ): number {
   let score = 0;
-  score += Math.min(download / 100, 1) * 40;
-  score += Math.min(upload / 50, 1) * 20;
-  score += ping < 20 ? 40 : ping < 50 ? 30 : 15;
-  return Math.round(score);
+  
+  // Download score (max 40 points) - More granular for high speeds
+  if (download >= 100) score += 40;
+  else if (download >= 50) score += 35;
+  else if (download >= 25) score += 30;
+  else if (download >= 10) score += 20;
+  else if (download >= 5) score += 10;
+  else score += Math.min(download / 100, 1) * 40;
+  
+  // Upload score (max 20 points) - More granular for high speeds
+  if (upload >= 50) score += 20;
+  else if (upload >= 20) score += 15;
+  else if (upload >= 10) score += 12;
+  else if (upload >= 5) score += 8;
+  else score += Math.min(upload / 50, 1) * 20;
+  
+  // Ping score (max 40 points)
+  if (ping < 20) score += 40;
+  else if (ping < 30) score += 38;
+  else if (ping < 40) score += 35;
+  else if (ping < 50) score += 30;
+  else if (ping < 60) score += 25;
+  else if (ping < 80) score += 20;
+  else if (ping < 100) score += 15;
+  else if (ping < 150) score += 10;
+  else score += 5;
+  
+  return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 // Get detailed score breakdown with explanations
@@ -117,35 +141,55 @@ export function getScoreBreakdown(
   upload: number
 ): ScoreBreakdown {
   // Download score (max 40 points)
-  let downloadScore = Math.min(download / 100, 1) * 40;
+  let downloadScore = 0;
   let downloadDetails = "";
   
   if (download >= 100) {
-    downloadDetails = `✅ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (excellent, max bonus)`;
+    downloadScore = 40;
+    downloadDetails = `✅ +40 points: Download speed ${download.toFixed(0)} Mbps (excellent, max bonus)`;
   } else if (download >= 50) {
-    downloadDetails = `✅ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (good)`;
+    downloadScore = 35;
+    const needed = 100 - download;
+    downloadDetails = `👍 +35 points: Download speed ${download.toFixed(0)} Mbps (great, need ${needed.toFixed(0)} more Mbps for max)`;
   } else if (download >= 25) {
-    downloadDetails = `👍 +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (decent)`;
+    downloadScore = 30;
+    const needed = 100 - download;
+    downloadDetails = `👍 +30 points: Download speed ${download.toFixed(0)} Mbps (good, need ${needed.toFixed(0)} more Mbps for max)`;
   } else if (download >= 10) {
-    downloadDetails = `⚠️ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (average)`;
+    downloadScore = 20;
+    const needed = 100 - download;
+    downloadDetails = `⚠️ +20 points: Download speed ${download.toFixed(0)} Mbps (fair, need ${needed.toFixed(0)} more Mbps for max)`;
+  } else if (download >= 5) {
+    downloadScore = 10;
+    const needed = 100 - download;
+    downloadDetails = `⚠️ +10 points: Download speed ${download.toFixed(0)} Mbps (slow, need ${needed.toFixed(0)} more Mbps for max)`;
   } else {
-    downloadDetails = `❌ +${downloadScore.toFixed(0)} points: Download speed ${download.toFixed(0)} Mbps (slow, max 40 points needs 100+ Mbps)`;
+    downloadScore = Math.floor((download / 100) * 40);
+    downloadDetails = `❌ +${downloadScore} points: Download speed ${download.toFixed(0)} Mbps (very slow, need 100+ Mbps for max)`;
   }
 
   // Upload score (max 20 points)
-  let uploadScore = Math.min(upload / 50, 1) * 20;
+  let uploadScore = 0;
   let uploadDetails = "";
   
   if (upload >= 50) {
-    uploadDetails = `✅ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (excellent, max bonus)`;
-  } else if (upload >= 25) {
-    uploadDetails = `✅ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (great)`;
+    uploadScore = 20;
+    uploadDetails = `✅ +20 points: Upload speed ${upload.toFixed(0)} Mbps (excellent, max bonus)`;
+  } else if (upload >= 20) {
+    uploadScore = 15;
+    const needed = 50 - upload;
+    uploadDetails = `👍 +15 points: Upload speed ${upload.toFixed(0)} Mbps (great, need ${needed.toFixed(0)} more Mbps for max)`;
   } else if (upload >= 10) {
-    uploadDetails = `👍 +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (good for video calls)`;
+    uploadScore = 12;
+    const needed = 50 - upload;
+    uploadDetails = `👍 +12 points: Upload speed ${upload.toFixed(0)} Mbps (good, need ${needed.toFixed(0)} more Mbps for max)`;
   } else if (upload >= 5) {
-    uploadDetails = `⚠️ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (adequate)`;
+    uploadScore = 8;
+    const needed = 50 - upload;
+    uploadDetails = `⚠️ +8 points: Upload speed ${upload.toFixed(0)} Mbps (fair, need ${needed.toFixed(0)} more Mbps for max)`;
   } else {
-    uploadDetails = `❌ +${uploadScore.toFixed(0)} points: Upload speed ${upload.toFixed(0)} Mbps (slow, max 20 points needs 50+ Mbps)`;
+    uploadScore = Math.floor((upload / 50) * 20);
+    uploadDetails = `❌ +${uploadScore} points: Upload speed ${upload.toFixed(0)} Mbps (slow, need 50+ Mbps for max)`;
   }
 
   // Ping score (max 40 points)
@@ -155,21 +199,48 @@ export function getScoreBreakdown(
   if (ping < 20) {
     pingScore = 40;
     pingDetails = `✅ +40 points: Ping ${ping.toFixed(0)} ms (excellent for gaming)`;
+  } else if (ping < 30) {
+    pingScore = 38;
+    const needed = ping - 20;
+    pingDetails = `👍 +38 points: Ping ${ping.toFixed(0)} ms (great, ${needed.toFixed(0)} ms above ideal)`;
+  } else if (ping < 40) {
+    pingScore = 35;
+    const needed = ping - 20;
+    pingDetails = `👍 +35 points: Ping ${ping.toFixed(0)} ms (good, ${needed.toFixed(0)} ms above ideal)`;
   } else if (ping < 50) {
     pingScore = 30;
-    pingDetails = `👍 +30 points: Ping ${ping.toFixed(0)} ms (good for most games)`;
-  } else {
+    const needed = ping - 20;
+    pingDetails = `⚠️ +30 points: Ping ${ping.toFixed(0)} ms (fair, ${needed.toFixed(0)} ms above ideal)`;
+  } else if (ping < 60) {
+    pingScore = 25;
+    const needed = ping - 20;
+    pingDetails = `⚠️ +25 points: Ping ${ping.toFixed(0)} ms (noticeable lag, ${needed.toFixed(0)} ms above ideal)`;
+  } else if (ping < 80) {
+    pingScore = 20;
+    const needed = ping - 20;
+    pingDetails = `⚠️ +20 points: Ping ${ping.toFixed(0)} ms (high latency, ${needed.toFixed(0)} ms above ideal)`;
+  } else if (ping < 100) {
     pingScore = 15;
-    pingDetails = `⚠️ +15 points: Ping ${ping.toFixed(0)} ms (may cause lag in games)`;
+    const needed = ping - 20;
+    pingDetails = `❌ +15 points: Ping ${ping.toFixed(0)} ms (poor, ${needed.toFixed(0)} ms above ideal)`;
+  } else if (ping < 150) {
+    pingScore = 10;
+    const needed = ping - 20;
+    pingDetails = `❌ +10 points: Ping ${ping.toFixed(0)} ms (very poor, ${needed.toFixed(0)} ms above ideal)`;
+  } else {
+    pingScore = 5;
+    const needed = ping - 20;
+    pingDetails = `❌ +5 points: Ping ${ping.toFixed(0)} ms (extremely poor, ${needed.toFixed(0)} ms above ideal)`;
   }
 
   const totalScore = downloadScore + uploadScore + pingScore;
+  const finalTotal = Math.min(100, Math.max(0, totalScore));
 
   return {
     downloadScore: Math.round(downloadScore),
     uploadScore: Math.round(uploadScore),
     pingScore: Math.round(pingScore),
-    totalScore: Math.round(totalScore),
+    totalScore: Math.round(finalTotal),
     details: {
       download: downloadDetails,
       upload: uploadDetails,
@@ -190,18 +261,20 @@ export function analyzeByMode(
   switch (mode) {
     case "gaming":
       // More realistic thresholds for gaming
-      if (ping < 30 && jitter < 20)  // Increased jitter threshold from 10 to 20
+      if (ping < 30 && jitter < 20 && download >= 25)
         return "🎮 Excellent for gaming! Low latency & stable connection.";
-      else if (ping < 50 && jitter < 30)
+      else if (ping < 50 && jitter < 30 && download >= 15)
         return "👍 Good for gaming. May have occasional hiccups.";
-      else if (ping < 80)
+      else if (ping < 80 && download >= 10)
         return "⚠️ Playable but may experience lag. Consider using ethernet.";
       else
         return "❌ High latency - not recommended for competitive gaming.";
 
     case "streaming":
-      if (download >= 50)
-        return "📺 Perfect for 4K/8K streaming on multiple devices!";
+      if (download >= 100)
+        return "📺 Perfect for 8K/4K HDR streaming on multiple devices!";
+      else if (download >= 50)
+        return "📺 Excellent for 4K streaming on 2-3 devices simultaneously.";
       else if (download >= 25)
         return "📺 Great for 4K streaming on 1-2 devices.";
       else if (download >= 10)
@@ -212,11 +285,11 @@ export function analyzeByMode(
         return "❌ Streaming may buffer frequently. Consider upgrading.";
 
     case "work":
-      if (upload >= 20 && ping < 50)
+      if (upload >= 20 && ping < 50 && download >= 25)
         return "💼 Excellent for video conferencing & large file sharing!";
-      else if (upload >= 10 && ping < 80)
+      else if (upload >= 10 && ping < 80 && download >= 10)
         return "💼 Great for Zoom/Teams calls & file sharing.";
-      else if (upload >= 5)
+      else if (upload >= 5 && download >= 5)
         return "💼 Adequate for voice calls and emails.";
       else
         return "⚠️ Video calls may be unstable. Check your upload speed.";
@@ -264,4 +337,56 @@ export function getScoreExplanation(
   }
   
   return explanation;
+}
+
+// NEW: Get deduction explanation for the UI
+export function getDeductionExplanation(
+  ping: number,
+  download: number,
+  upload: number,
+  breakdown: ScoreBreakdown
+): string[] {
+  const maxDownloadScore = 40;
+  const maxUploadScore = 20;
+  const maxPingScore = 40;
+  
+  const downloadDeduction = maxDownloadScore - breakdown.downloadScore;
+  const uploadDeduction = maxUploadScore - breakdown.uploadScore;
+  const pingDeduction = maxPingScore - breakdown.pingScore;
+  const totalDeduction = downloadDeduction + uploadDeduction + pingDeduction;
+  
+  let explanations = [];
+  
+  if (downloadDeduction > 0) {
+    let reason = "";
+    if (download < 25) reason = `Very slow (${download.toFixed(0)} Mbps)`;
+    else if (download < 50) reason = `Below average (${download.toFixed(0)} Mbps)`;
+    else if (download < 100) reason = `Good but not max (${download.toFixed(0)} Mbps)`;
+    explanations.push(`📉 Download: -${downloadDeduction} points (${reason}, need 100+ Mbps for full 40 points)`);
+  }
+  
+  if (uploadDeduction > 0) {
+    let reason = "";
+    if (upload < 5) reason = `Very slow (${upload.toFixed(0)} Mbps)`;
+    else if (upload < 10) reason = `Below average (${upload.toFixed(0)} Mbps)`;
+    else if (upload < 50) reason = `Good but not max (${upload.toFixed(0)} Mbps)`;
+    explanations.push(`📉 Upload: -${uploadDeduction} points (${reason}, need 50+ Mbps for full 20 points)`);
+  }
+  
+  if (pingDeduction > 0) {
+    let reason = "";
+    if (ping > 100) reason = `Very high latency (${ping.toFixed(0)} ms)`;
+    else if (ping > 50) reason = `High latency (${ping.toFixed(0)} ms)`;
+    else if (ping > 20) reason = `Good but not ideal (${ping.toFixed(0)} ms)`;
+    explanations.push(`📉 Ping: -${pingDeduction} points (${reason}, need under 20ms for full 40 points)`);
+  }
+  
+  if (totalDeduction === 0) {
+    explanations.push("✨ Perfect score! No points deducted from download, upload, or ping!");
+  } else {
+    explanations.push(`\n📊 Total deduction: ${totalDeduction} points`);
+    explanations.push(`🎯 Final score: ${breakdown.totalScore}/100`);
+  }
+  
+  return explanations;
 }

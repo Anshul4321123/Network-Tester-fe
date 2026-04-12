@@ -1,4 +1,4 @@
-// components/AdvancedDetails.tsx - Added ISP display in history
+// components/AdvancedDetails.tsx - Fixed with separate columns for Your Name and Original ISP
 import { getBestScore, getBestStats, type SpeedTestRecord, type BestStats } from "../utils/storage";
 import { useState, useEffect } from "react";
 
@@ -14,6 +14,41 @@ interface AdvancedDetailsProps {
   upload: number | null;
   phase: string;
 }
+
+// Helper function to parse date string
+const parseDate = (dateStr: string): { date: string; time: string } => {
+  const parts = dateStr.split(", ");
+  if (parts.length === 2) {
+    return { date: parts[0], time: parts[1] };
+  }
+  return { date: dateStr, time: "" };
+};
+
+// Calculate trend based on recent history
+const calculateTrend = (history: SpeedTestRecord[]): { 
+  trend: "Improving" | "Degrading" | "Stable";
+  icon: string;
+  color: string;
+  percentChange: number;
+} => {
+  if (history.length < 3) {
+    return { trend: "Stable", icon: "📊", color: "#64748b", percentChange: 0 };
+  }
+
+  const recentTests = history.slice(0, Math.min(5, history.length));
+  const oldestScore = recentTests[recentTests.length - 1]?.score || 0;
+  const newestScore = recentTests[0]?.score || 0;
+  
+  const percentChange = ((newestScore - oldestScore) / oldestScore) * 100;
+  
+  if (percentChange > 10) {
+    return { trend: "Improving", icon: "📈", color: "#10b981", percentChange: Math.round(percentChange) };
+  } else if (percentChange < -10) {
+    return { trend: "Degrading", icon: "📉", color: "#ef4444", percentChange: Math.abs(Math.round(percentChange)) };
+  } else {
+    return { trend: "Stable", icon: "📊", color: "#f59e0b", percentChange: 0 };
+  }
+};
 
 export default function AdvancedDetails({
   bufferbloat,
@@ -34,6 +69,8 @@ export default function AdvancedDetails({
   const [timeUntilNextPing, setTimeUntilNextPing] = useState<number>(300);
   const [timeUntilNextFullTest, setTimeUntilNextFullTest] = useState<number>(1800);
   const [showMonitoringInfo, setShowMonitoringInfo] = useState(false);
+  
+  const trendData = calculateTrend(history);
 
   const formatSpeed = (value: number) => {
     if (value > 1000) return `${(value / 1000).toFixed(1)} Gbps`;
@@ -47,7 +84,6 @@ export default function AdvancedDetails({
     setTimeout(() => setShowToggleFeedback(false), 3000);
   };
 
-  // Timer countdown effect
   useEffect(() => {
     if (!autoRun || !isTabVisible) return;
 
@@ -65,7 +101,6 @@ export default function AdvancedDetails({
     return () => clearInterval(interval);
   }, [autoRun, isTabVisible]);
 
-  // Reset timers when monitoring starts
   useEffect(() => {
     if (autoRun && isTabVisible) {
       setTimeUntilNextPing(300);
@@ -131,6 +166,11 @@ export default function AdvancedDetails({
   };
 
   const status = getMonitoringStatus();
+
+  // Helper to check if ISP is customized
+  const isCustomized = (record: SpeedTestRecord) => {
+    return record.originalIsp && record.originalIsp !== (record.customName || record.isp);
+  };
 
   return (
     <details
@@ -232,7 +272,6 @@ export default function AdvancedDetails({
 
         {/* Enhanced Monitoring Section */}
         <div style={{ marginTop: "16px" }}>
-          {/* Info Banner */}
           <div
             style={{
               background: "rgba(59,130,246,0.08)",
@@ -245,14 +284,11 @@ export default function AdvancedDetails({
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
-              <span>💡</span>
-              <span style={{ fontWeight: "600" }}>How Monitoring Works</span>
+              <span>🔔</span>
+              <span style={{ fontWeight: "600" }}>Monitoring tracks your internet quality</span>
             </div>
             <div style={{ lineHeight: "1.4" }}>
-              • Works <strong>only while this tab is visible</strong><br />
-              • Checks ping every <strong>5 minutes</strong><br />
-              • Runs full test every <strong>30 minutes</strong><br />
-              • Auto-triggers if ping exceeds <strong>150ms</strong>
+              We'll alert you when your connection drops or has issues
             </div>
           </div>
 
@@ -279,71 +315,31 @@ export default function AdvancedDetails({
               </div>
             </div>
             
-            {/* Active Timers */}
             {autoRun && isTabVisible && (
-              <div style={{ 
-                marginTop: "10px", 
-                paddingTop: "10px", 
-                borderTop: "1px solid rgba(0,0,0,0.08)",
-              }}>
-                <div style={{ fontSize: "10px", fontWeight: "600", marginBottom: "8px", color: "#1e293b" }}>
-                  ⏱️ Next Tests In:
-                </div>
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(0,0,0,0.08)" }}>
+                <div style={{ fontSize: "10px", fontWeight: "600", marginBottom: "8px", color: "#1e293b" }}>⏱️ Next Tests In:</div>
                 <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                  <div style={{ 
-                    background: "rgba(0,0,0,0.05)", 
-                    padding: "6px 12px", 
-                    borderRadius: "8px",
-                    flex: 1,
-                    textAlign: "center",
-                  }}>
+                  <div style={{ background: "rgba(0,0,0,0.05)", padding: "6px 12px", borderRadius: "8px", flex: 1, textAlign: "center" }}>
                     <div style={{ fontSize: "9px", color: "#64748b" }}>📡 Ping Check</div>
-                    <div style={{ fontSize: "16px", fontWeight: "bold", color: "#3b82f6" }}>
-                      {formatTime(timeUntilNextPing)}
-                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: "bold", color: "#3b82f6" }}>{formatTime(timeUntilNextPing)}</div>
                   </div>
-                  <div style={{ 
-                    background: "rgba(0,0,0,0.05)", 
-                    padding: "6px 12px", 
-                    borderRadius: "8px",
-                    flex: 1,
-                    textAlign: "center",
-                  }}>
+                  <div style={{ background: "rgba(0,0,0,0.05)", padding: "6px 12px", borderRadius: "8px", flex: 1, textAlign: "center" }}>
                     <div style={{ fontSize: "9px", color: "#64748b" }}>🔬 Full Test</div>
-                    <div style={{ fontSize: "16px", fontWeight: "bold", color: "#8b5cf6" }}>
-                      {formatTime(timeUntilNextFullTest)}
-                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: "bold", color: "#8b5cf6" }}>{formatTime(timeUntilNextFullTest)}</div>
                   </div>
                 </div>
               </div>
             )}
             
-            {/* Tab hidden warning */}
             {autoRun && !isTabVisible && (
-              <div style={{ 
-                marginTop: "10px", 
-                paddingTop: "10px", 
-                borderTop: "1px solid rgba(0,0,0,0.08)",
-              }}>
-                <div style={{ 
-                  background: "rgba(245,158,11,0.15)", 
-                  padding: "8px", 
-                  borderRadius: "8px",
-                  fontSize: "10px",
-                  color: "#92400e",
-                }}>
-                  <div style={{ fontWeight: "600", marginBottom: "4px" }}>⏸ Why is monitoring paused?</div>
-                  <div>Speed tests automatically pause when you switch tabs to save your device's battery and data. Tests will resume immediately when you return to this tab.</div>
+              <div style={{ marginTop: "10px", paddingTop: "10px", borderTop: "1px solid rgba(0,0,0,0.08)" }}>
+                <div style={{ background: "rgba(245,158,11,0.15)", padding: "8px", borderRadius: "8px", fontSize: "10px", color: "#92400e" }}>
+                  ⏸ Monitoring pauses when you leave this tab. Resume when you return.
                 </div>
               </div>
             )}
 
-            <div style={{ 
-              marginTop: "8px", 
-              fontSize: "9px", 
-              color: "#64748b",
-              fontStyle: "italic",
-            }}>
+            <div style={{ marginTop: "8px", fontSize: "9px", color: "#64748b", fontStyle: "italic" }}>
               💡 {status.suggestion}
             </div>
           </div>
@@ -368,12 +364,8 @@ export default function AdvancedDetails({
                 width: "100%",
                 justifyContent: "center",
               }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "scale(1.02)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "scale(1)";
-              }}
+              onMouseEnter={(e) => e.currentTarget.style.transform = "scale(1.02)"}
+              onMouseLeave={(e) => e.currentTarget.style.transform = "scale(1)"}
             >
               <span>{autoRun ? "🛑" : "🔔"}</span>
               {autoRun ? "Stop Monitoring" : "Enable Monitoring"}
@@ -400,32 +392,19 @@ export default function AdvancedDetails({
                   boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
                 }}
               >
-                {autoRun ? "✅ Monitoring Stopped" : "✅ Monitoring Started"}
+                {autoRun ? "✅ Monitoring Started" : "✅ Monitoring Stopped"}
               </div>
             )}
           </div>
 
           {lastActionTime && (
-            <div style={{ 
-              textAlign: "center", 
-              fontSize: "9px", 
-              color: "#94a3b8", 
-              marginTop: "8px",
-              opacity: 0.6,
-            }}>
+            <div style={{ textAlign: "center", fontSize: "9px", color: "#94a3b8", marginTop: "8px", opacity: 0.6 }}>
               Last change: {new Date(lastActionTime).toLocaleTimeString()}
             </div>
           )}
 
-          {/* Live ping display */}
           {autoRun && isTabVisible && monitorPing !== null && monitorPing >= 0 && (
-            <div style={{ 
-              marginTop: "10px",
-              padding: "8px",
-              background: "rgba(16,185,129,0.08)",
-              borderRadius: "8px",
-              textAlign: "center",
-            }}>
+            <div style={{ marginTop: "10px", padding: "8px", background: "rgba(16,185,129,0.08)", borderRadius: "8px", textAlign: "center" }}>
               <span style={{ fontSize: "11px", color: "#64748b" }}>📡 Current Ping: </span>
               <span style={{ fontSize: "13px", fontWeight: "bold", color: monitorPing < 50 ? "#10b981" : monitorPing < 100 ? "#f59e0b" : "#ef4444" }}>
                 {monitorPing} ms
@@ -434,7 +413,7 @@ export default function AdvancedDetails({
           )}
         </div>
 
-        {/* History - Last 5 records with ISP display */}
+        {/* History - Last 5 records with separate columns for Your Name and Original ISP */}
         {history.length > 0 && !isTestActive && (
           <div style={{ marginTop: "16px" }}>
             <div
@@ -443,65 +422,102 @@ export default function AdvancedDetails({
                 fontWeight: "500",
                 color: "#475569",
                 marginBottom: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
               }}
             >
-              📜 Recent Tests
+              <span>📜 Recent Tests</span>
+              <span
+                style={{
+                  fontSize: "10px",
+                  fontWeight: "600",
+                  color: trendData.color,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px",
+                  background: `${trendData.color}15`,
+                  padding: "4px 8px",
+                  borderRadius: "20px",
+                }}
+              >
+                {trendData.icon} {trendData.trend}
+                {trendData.percentChange > 0 && ` +${trendData.percentChange}%`}
+                {trendData.percentChange < 0 && ` -${trendData.percentChange}%`}
+              </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {history.slice(0, 5).map((record, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    fontSize: "11px",
-                    padding: "8px 10px",
-                    background: "rgba(100,116,139,0.05)",
-                    borderRadius: "10px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "6px",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-                    <span style={{ color: "#64748b" }}>{record.date.slice(0, 16)}</span>
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      <span>📡 {record.ping}ms</span>
-                      <span>⬇️ {formatSpeed(record.download)}</span>
-                      <span>⬆️ {formatSpeed(record.upload)}</span>
-                      <span
-                        style={{
-                          fontWeight: "bold",
-                          color:
-                            record.score > 80
-                              ? "#10b981"
-                              : record.score > 50
-                              ? "#f59e0b"
-                              : "#ef4444",
-                        }}
-                      >
-                        {record.score}
-                      </span>
+              {history.slice(0, 5).map((record, idx) => {
+                const { date, time } = parseDate(record.date);
+                const customized = isCustomized(record);
+                const customName = record.customName || record.isp || "Unknown";
+                const originalISP = record.originalIsp || "Unknown";
+                
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      fontSize: "11px",
+                      padding: "8px 10px",
+                      background: "rgba(100,116,139,0.05)",
+                      borderRadius: "10px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: "6px",
+                    }}
+                  >
+                    {/* Row 1: Date, Time, and Metrics */}
+                    <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <span style={{ color: "#64748b" }}>{date}</span>
+                        <span style={{ color: "#94a3b8", fontSize: "9px" }}>{time}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <span>📡 {record.ping}ms</span>
+                        <span>⬇️ {formatSpeed(record.download)}</span>
+                        <span>⬆️ {formatSpeed(record.upload)}</span>
+                        <span
+                          style={{
+                            fontWeight: "bold",
+                            color: record.score > 80 ? "#10b981" : record.score > 50 ? "#f59e0b" : "#ef4444",
+                          }}
+                        >
+                          {record.score}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  {/* ISP and Network Type display */}
-                  {(record.isp || record.networkType) && (
+                    
+                    {/* Row 2: Your Name and Original ISP */}
                     <div style={{ 
                       display: "flex", 
-                      gap: "12px", 
-                      fontSize: "9px", 
+                      gap: "16px", 
+                      fontSize: "10px", 
                       color: "#64748b",
                       borderTop: "1px solid rgba(0,0,0,0.05)",
-                      paddingTop: "4px",
+                      paddingTop: "6px",
+                      flexWrap: "wrap",
                     }}>
-                      {record.isp && record.isp !== "Unknown" && (
-                        <span>🏢 {record.isp}</span>
-                      )}
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span>🏷️</span>
+                        <span style={{ fontWeight: customized ? "600" : "400", color: "#1e293b" }}>
+                          {customName}
+                        </span>
+                        {customized && <span style={{ fontSize: "9px", color: "#10b981" }}>✏️</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                        <span>🏢</span>
+                        <span style={{ color: "#94a3b8" }}>{originalISP}</span>
+                      </div>
                       {record.networkType && (
-                        <span>📶 {record.networkType.toUpperCase()}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                          <span>📶</span>
+                          <span>{record.networkType.toUpperCase()}</span>
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

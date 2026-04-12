@@ -39,9 +39,9 @@ export default function Hero({
   showLiveGraph,
   onToggleLiveGraph,
 }: HeroProps) {
-  const [showTestOptions, setShowTestOptions] = useState(false);
   const [showScoreExplanation, setShowScoreExplanation] = useState(false);
   const [scoreBreakdown, setScoreBreakdown] = useState<ScoreBreakdown | null>(null);
+  const [testType, setTestType] = useState<"quick" | "full">("full");
 
   const formatSpeed = (value: number | null) => {
     if (!value) return "--";
@@ -49,36 +49,10 @@ export default function Hero({
     return `${value.toFixed(1)} Mbps`;
   };
 
-  const getSpeedDescription = (value: number | null, type: "download" | "upload") => {
-    if (!value) return "";
-    if (value > 1000) {
-      const gbps = (value / 1000).toFixed(1);
-      if (type === "download") {
-        if (gbps > "5") return "🚀 Blazing fast";
-        if (gbps > "1") return "⚡ Extremely fast";
-        return "💨 Very fast";
-      } else {
-        if (gbps > "1") return "📤 Perfect for cloud backups";
-        if (gbps > "0.5") return "👍 Great for video calls";
-        return "✅ Good for everyday";
-      }
-    }
-    if (value > 100) {
-      return type === "download" ? "🎮 Great for gaming" : "📹 Perfect for video calls";
-    }
-    if (value > 50) {
-      return type === "download" ? "📺 Good for HD streaming" : "💬 Fine for voice calls";
-    }
-    if (value > 25) {
-      return "📱 Suitable for basic use";
-    }
-    return "⚠️ May struggle";
-  };
-
   const getScoreMessage = (score: number) => {
-    if (score > 80) return "Excellent connection 🚀 (click for details)";
-    if (score > 50) return "Good connection 👍 (click for details)";
-    return "Needs improvement ⚠️ (click for details)";
+    if (score > 80) return "Excellent connection 🚀";
+    if (score > 50) return "Good connection 👍";
+    return "Needs improvement ⚠️";
   };
 
   const getPhaseText = () => {
@@ -108,6 +82,28 @@ export default function Hero({
     }
   };
 
+  // Handle test type change (Quick vs Full)
+  const handleTestTypeChange = (type: "quick" | "full") => {
+    setTestType(type);
+    if (type === "quick") {
+      // Quick test: only ping and download
+      setTestSelection({
+        ping: true,
+        jitter: false,
+        download: true,
+        upload: false,
+      });
+    } else {
+      // Full test: all tests
+      setTestSelection({
+        ping: true,
+        jitter: true,
+        download: true,
+        upload: true,
+      });
+    }
+  };
+
   const getDeductionExplanation = (breakdown: ScoreBreakdown) => {
     const maxDownloadScore = 40;
     const maxUploadScore = 20;
@@ -122,32 +118,26 @@ export default function Hero({
     
     if (downloadDeduction > 0) {
       let reason = "";
-      if (download && download < 100) {
-        if (download < 25) reason = `Very slow (${download.toFixed(0)} Mbps)`;
-        else if (download < 50) reason = `Below average (${download.toFixed(0)} Mbps)`;
-        else if (download < 100) reason = `Good but not max (${download.toFixed(0)} Mbps)`;
-        explanations.push(`📉 Download: -${downloadDeduction} points (${reason}, need 100+ Mbps for full 40 points)`);
-      }
+      if (download && download < 25) reason = `Very slow (${download.toFixed(0)} Mbps)`;
+      else if (download && download < 50) reason = `Below average (${download.toFixed(0)} Mbps)`;
+      else if (download && download < 100) reason = `Good but not max (${download.toFixed(0)} Mbps)`;
+      explanations.push(`📉 Download: -${downloadDeduction} points (${reason || `need ${(100 - (download || 0)).toFixed(0)} more Mbps`}, need 100+ Mbps for full 40 points)`);
     }
     
     if (uploadDeduction > 0) {
       let reason = "";
-      if (upload && upload < 50) {
-        if (upload < 5) reason = `Very slow (${upload.toFixed(0)} Mbps)`;
-        else if (upload < 10) reason = `Below average (${upload.toFixed(0)} Mbps)`;
-        else if (upload < 50) reason = `Good but not max (${upload.toFixed(0)} Mbps)`;
-        explanations.push(`📉 Upload: -${uploadDeduction} points (${reason}, need 50+ Mbps for full 20 points)`);
-      }
+      if (upload && upload < 5) reason = `Very slow (${upload.toFixed(0)} Mbps)`;
+      else if (upload && upload < 10) reason = `Below average (${upload.toFixed(0)} Mbps)`;
+      else if (upload && upload < 50) reason = `Good but not max (${upload.toFixed(0)} Mbps)`;
+      explanations.push(`📉 Upload: -${uploadDeduction} points (${reason || `need ${(50 - (upload || 0)).toFixed(0)} more Mbps`}, need 50+ Mbps for full 20 points)`);
     }
     
     if (pingDeduction > 0) {
       let reason = "";
-      if (ping && ping > 20) {
-        if (ping > 100) reason = `Very high latency (${ping.toFixed(0)} ms)`;
-        else if (ping > 50) reason = `High latency (${ping.toFixed(0)} ms)`;
-        else if (ping > 20) reason = `Good but not ideal (${ping.toFixed(0)} ms)`;
-        explanations.push(`📉 Ping: -${pingDeduction} points (${reason}, need under 20ms for full 40 points)`);
-      }
+      if (ping && ping > 100) reason = `Very high latency (${ping.toFixed(0)} ms)`;
+      else if (ping && ping > 50) reason = `High latency (${ping.toFixed(0)} ms)`;
+      else if (ping && ping > 20) reason = `Good but not ideal (${ping.toFixed(0)} ms)`;
+      explanations.push(`📉 Ping: -${pingDeduction} points (${reason || `need to reduce by ${((ping || 0) - 20).toFixed(0)}ms`}, need under 20ms for full 40 points)`);
     }
     
     if (totalDeduction === 0) {
@@ -176,7 +166,7 @@ export default function Hero({
         {score !== null ? (
           <div 
             style={{ 
-              marginBottom: "16px", 
+              marginBottom: "20px", 
               cursor: "pointer",
               transition: "transform 0.2s",
             }}
@@ -190,7 +180,7 @@ export default function Hero({
           >
             <div
               style={{
-                fontSize: "clamp(32px, 8vw, 44px)",
+                fontSize: "clamp(36px, 8vw, 48px)",
                 fontWeight: "bold",
                 color: score > 80 ? "#10b981" : score > 50 ? "#f59e0b" : "#ef4444",
               }}
@@ -206,12 +196,12 @@ export default function Hero({
                   color: "#475569",
                 }}
               >
-                {getScoreMessage(score)}
+                {getScoreMessage(score)} (click for details)
               </div>
             )}
           </div>
         ) : (
-          <div style={{ marginBottom: "16px" }}>
+          <div style={{ marginBottom: "20px" }}>
             <div
               style={{
                 fontSize: "clamp(24px, 6vw, 32px)",
@@ -238,55 +228,90 @@ export default function Hero({
           </div>
         )}
 
-        {/* METRICS GRID */}
+        {/* METRICS GRID - Only 4 core metrics */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(2, 1fr)",
-            gap: "clamp(10px, 3vw, 14px)",
+            gap: "clamp(12px, 3vw, 16px)",
             marginBottom: "20px",
           }}
         >
-          {testSelection.ping && (
-            <MetricCard 
-              label="Ping" 
-              value={ping !== null ? `${ping} ms` : undefined}
-              icon="📡"
-              isLoading={isMetricLoading("ping")}
-              description={ping ? (ping < 20 ? "🎮 Excellent for gaming" : ping < 50 ? "👍 Good for most games" : "⚠️ May cause lag") : ""}
-            />
-          )}
-          {testSelection.jitter && (
-            <MetricCard 
-              label="Jitter" 
-              value={jitter !== null ? `${jitter} ms` : undefined}
-              icon="⚡"
-              isLoading={isMetricLoading("jitter")}
-              description={jitter ? (jitter < 15 ? "✅ Very stable" : jitter < 30 ? "👍 Acceptable" : "⚠️ Unstable connection") : ""}
-            />
-          )}
-          {testSelection.download && (
-            <MetricCard
-              label="Download"
-              value={download !== null ? formatSpeed(download) : undefined}
-              icon="⬇️"
-              isLoading={isMetricLoading("download")}
-              description={download ? getSpeedDescription(download, "download") : ""}
-            />
-          )}
-          {testSelection.upload && (
-            <MetricCard
-              label="Upload"
-              value={upload !== null ? formatSpeed(upload) : undefined}
-              icon="⬆️"
-              isLoading={isMetricLoading("upload")}
-              description={upload ? getSpeedDescription(upload, "upload") : ""}
-            />
-          )}
+          <MetricCard 
+            label="Ping" 
+            value={ping !== null ? `${ping} ms` : undefined}
+            icon="📡"
+            isLoading={isMetricLoading("ping")}
+          />
+          <MetricCard 
+            label="Download" 
+            value={download !== null ? formatSpeed(download) : undefined}
+            icon="⬇️"
+            isLoading={isMetricLoading("download")}
+          />
+          <MetricCard 
+            label="Upload" 
+            value={upload !== null ? formatSpeed(upload) : undefined}
+            icon="⬆️"
+            isLoading={isMetricLoading("upload")}
+          />
+          <MetricCard 
+            label="Jitter" 
+            value={jitter !== null ? `${jitter} ms` : undefined}
+            icon="⚡"
+            isLoading={isMetricLoading("jitter")}
+          />
+        </div>
+
+        {/* Quick Test vs Full Test Toggle - Cleaner UX */}
+        <div
+          style={{
+            display: "flex",
+            gap: "12px",
+            marginBottom: "16px",
+            background: "#f1f5f9",
+            borderRadius: "40px",
+            padding: "4px",
+          }}
+        >
+          <button
+            onClick={() => handleTestTypeChange("quick")}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              background: testType === "quick" ? "#10b981" : "transparent",
+              color: testType === "quick" ? "#fff" : "#64748b",
+              border: "none",
+              borderRadius: "36px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: "600",
+              transition: "all 0.2s",
+            }}
+          >
+            ⚡ Quick Test (5 sec)
+          </button>
+          <button
+            onClick={() => handleTestTypeChange("full")}
+            style={{
+              flex: 1,
+              padding: "8px 12px",
+              background: testType === "full" ? "#8b5cf6" : "transparent",
+              color: testType === "full" ? "#fff" : "#64748b",
+              border: "none",
+              borderRadius: "36px",
+              cursor: "pointer",
+              fontSize: "13px",
+              fontWeight: "600",
+              transition: "all 0.2s",
+            }}
+          >
+            🔬 Full Test (Detailed)
+          </button>
         </div>
 
         {/* START BUTTON */}
-        <div style={{ marginBottom: "12px" }}>
+        <div style={{ marginBottom: "16px" }}>
           <div
             style={{
               display: "inline-block",
@@ -299,132 +324,7 @@ export default function Hero({
           </div>
         </div>
 
-        {/* TEST SELECTION - Compact Dropdown Inside Hero */}
-        <div
-          style={{
-            marginBottom: "12px",
-            borderTop: "1px solid #e2e8f0",
-            paddingTop: "12px",
-          }}
-        >
-          <button
-            onClick={() => setShowTestOptions(!showTestOptions)}
-            style={{
-              width: "100%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "8px 12px",
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: "12px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: "500",
-              color: "#475569",
-            }}
-          >
-            <span>🎯 Tests: {Object.values(testSelection).filter(Boolean).length}/4 selected</span>
-            <span style={{ fontSize: "12px" }}>{showTestOptions ? "▲" : "▼"}</span>
-          </button>
-
-          {showTestOptions && !running && (
-            <div
-              style={{
-                marginTop: "10px",
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "8px",
-                padding: "8px",
-                background: "#f8fafc",
-                borderRadius: "12px",
-              }}
-            >
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "6px 10px",
-                  background: testSelection.ping ? "rgba(16,185,129,0.1)" : "transparent",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={testSelection.ping}
-                  onChange={(e) => setTestSelection({ ...testSelection, ping: e.target.checked })}
-                  style={{ width: "16px", height: "16px", accentColor: "#10b981" }}
-                />
-                <span>📡 Ping</span>
-              </label>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "6px 10px",
-                  background: testSelection.jitter ? "rgba(139,92,246,0.1)" : "transparent",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={testSelection.jitter}
-                  onChange={(e) => setTestSelection({ ...testSelection, jitter: e.target.checked })}
-                  style={{ width: "16px", height: "16px", accentColor: "#8b5cf6" }}
-                />
-                <span>⚡ Jitter</span>
-              </label>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "6px 10px",
-                  background: testSelection.download ? "rgba(59,130,246,0.1)" : "transparent",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={testSelection.download}
-                  onChange={(e) => setTestSelection({ ...testSelection, download: e.target.checked })}
-                  style={{ width: "16px", height: "16px", accentColor: "#3b82f6" }}
-                />
-                <span>⬇️ Download</span>
-              </label>
-              <label
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "6px 10px",
-                  background: testSelection.upload ? "rgba(245,158,11,0.1)" : "transparent",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "12px",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={testSelection.upload}
-                  onChange={(e) => setTestSelection({ ...testSelection, upload: e.target.checked })}
-                  style={{ width: "16px", height: "16px", accentColor: "#f59e0b" }}
-                />
-                <span>⬆️ Upload</span>
-              </label>
-            </div>
-          )}
-        </div>
-
-        {/* Toggle Switch for Live Graphs - Android Style */}
+        {/* Toggle Switch for Live Graphs - Moved here */}
         <div
           style={{
             display: "flex",
@@ -477,7 +377,7 @@ export default function Hero({
           style={{
             display: "flex",
             flexWrap: "wrap",
-            gap: "6px",
+            gap: "8px",
             justifyContent: "center",
           }}
         >
@@ -487,14 +387,14 @@ export default function Hero({
               onClick={() => onModeChange(m as any)}
               disabled={running}
               style={{
-                padding: "5px 12px",
+                padding: "6px 14px",
                 background: mode === m ? "#10b981" : "#f1f5f9",
                 color: mode === m ? "#fff" : "#334155",
                 border: mode === m ? "none" : "1px solid #e2e8f0",
                 borderRadius: "40px",
                 cursor: running ? "not-allowed" : "pointer",
                 fontWeight: "500",
-                fontSize: "clamp(10px, 2.5vw, 12px)",
+                fontSize: "clamp(11px, 2.5vw, 13px)",
                 transition: "all 0.2s",
                 opacity: running ? 0.6 : 1,
               }}
@@ -507,10 +407,9 @@ export default function Hero({
         </div>
       </div>
 
-      {/* Score Explanation Modal - Persistent, No Auto-close */}
+      {/* Score Explanation Modal */}
       {showScoreExplanation && scoreBreakdown && (
         <>
-          {/* Backdrop */}
           <div
             style={{
               position: "fixed",
@@ -525,7 +424,6 @@ export default function Hero({
             onClick={() => setShowScoreExplanation(false)}
           />
           
-          {/* Modal */}
           <div
             style={{
               position: "fixed",
@@ -546,7 +444,6 @@ export default function Hero({
               border: "1px solid rgba(255,255,255,0.1)",
             }}
           >
-            {/* Header */}
             <div style={{ 
               display: "flex", 
               justifyContent: "space-between", 
@@ -579,18 +476,11 @@ export default function Hero({
                   justifyContent: "center",
                   transition: "all 0.2s",
                 }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.2)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "rgba(255,255,255,0.1)";
-                }}
               >
                 ✕
               </button>
             </div>
 
-            {/* Score Circle in Modal */}
             <div style={{ textAlign: "center", marginBottom: "24px" }}>
               <div
                 style={{
@@ -624,11 +514,9 @@ export default function Hero({
               </div>
             </div>
 
-            {/* Detailed Breakdown */}
             <div style={{ marginBottom: "20px" }}>
               <h3 style={{ fontSize: "14px", marginBottom: "12px", color: "#94a3b8" }}>Points Breakdown</h3>
               
-              {/* Download Section */}
               <div style={{ 
                 background: "rgba(59,130,246,0.1)", 
                 borderRadius: "12px", 
@@ -645,14 +533,8 @@ export default function Hero({
                 <div style={{ fontSize: "11px", opacity: 0.8, marginBottom: "6px" }}>
                   {scoreBreakdown.details.download}
                 </div>
-                {scoreBreakdown.downloadScore < 40 && (
-                  <div style={{ fontSize: "10px", color: "#f59e0b", marginTop: "4px" }}>
-                    💡 {download && download < 100 ? `Need ${(100 - download).toFixed(0)} more Mbps for full 40 points` : "Run faster test for max points"}
-                  </div>
-                )}
               </div>
 
-              {/* Upload Section */}
               <div style={{ 
                 background: "rgba(139,92,246,0.1)", 
                 borderRadius: "12px", 
@@ -669,14 +551,8 @@ export default function Hero({
                 <div style={{ fontSize: "11px", opacity: 0.8, marginBottom: "6px" }}>
                   {scoreBreakdown.details.upload}
                 </div>
-                {scoreBreakdown.uploadScore < 20 && (
-                  <div style={{ fontSize: "10px", color: "#f59e0b", marginTop: "4px" }}>
-                    💡 {upload && upload < 50 ? `Need ${(50 - upload).toFixed(0)} more Mbps for full 20 points` : "Run faster test for max points"}
-                  </div>
-                )}
               </div>
 
-              {/* Ping Section */}
               <div style={{ 
                 background: "rgba(16,185,129,0.1)", 
                 borderRadius: "12px", 
@@ -693,15 +569,9 @@ export default function Hero({
                 <div style={{ fontSize: "11px", opacity: 0.8, marginBottom: "6px" }}>
                   {scoreBreakdown.details.ping}
                 </div>
-                {scoreBreakdown.pingScore < 40 && (
-                  <div style={{ fontSize: "10px", color: "#f59e0b", marginTop: "4px" }}>
-                    💡 {ping && ping > 20 ? `Reduce latency by ${(ping - 20).toFixed(0)}ms for full 40 points` : "Lower ping = better gaming experience"}
-                  </div>
-                )}
               </div>
             </div>
 
-            {/* Deduction Summary */}
             <div style={{ 
               background: "rgba(0,0,0,0.3)", 
               borderRadius: "12px", 
@@ -716,7 +586,6 @@ export default function Hero({
               ))}
             </div>
 
-            {/* What affects score note */}
             <div style={{ 
               fontSize: "10px", 
               opacity: 0.6, 
@@ -727,7 +596,6 @@ export default function Hero({
               💡 Download (40%) • Upload (20%) • Ping (40%)
             </div>
 
-            {/* Close Button */}
             <button
               onClick={() => setShowScoreExplanation(false)}
               style={{
@@ -742,12 +610,6 @@ export default function Hero({
                 fontSize: "14px",
                 fontWeight: "600",
                 transition: "all 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = "scale(1.02)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = "scale(1)";
               }}
             >
               Got it!
