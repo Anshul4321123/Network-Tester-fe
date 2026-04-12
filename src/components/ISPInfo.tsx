@@ -15,10 +15,10 @@ interface ISPInfoProps {
   onISPManualSet?: (isp: string) => void;
 }
 
-export default function ISPInfo({ ispInfo, onISPDetected, onISPManualSet }: ISPInfoProps) {
+export default function ISPInfo({ ispInfo, onISPManualSet }: ISPInfoProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [manualISP, setManualISP] = useState("");
-  const [currentFingerprint, setCurrentFingerprint] = useState<string | null>(null);
+  const [, setCurrentFingerprint] = useState<string | null>(null);
   const [currentMapping, setCurrentMapping] = useState<NetworkMapping | null>(null);
   const [isVPN, setIsVPN] = useState(false);
   
@@ -53,7 +53,7 @@ export default function ISPInfo({ ispInfo, onISPDetected, onISPManualSet }: ISPI
   const handleSaveManual = () => {
     if (manualISP && manualISP.trim() && ispInfo?.isp && ispInfo?.ip) {
       const newISP = manualISP.trim();
-      const currentVPN = getVPNState();
+      // const currentVPN = getVPNState();
       
       // Save mapping for ALL network types that might be used
       const networkTypes = ["4g", "5g", "3g", "2g", "unknown"];

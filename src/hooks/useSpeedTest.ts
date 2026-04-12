@@ -1,4 +1,4 @@
-// hooks/useSpeedTest.ts
+// hooks/useSpeedTest.ts - FIXED (removed unused originalIsp parameter)
 import { useState, useEffect, useRef } from "react";
 import type { TestPhase } from "../types/speedTestTypes";
 import {
@@ -349,7 +349,7 @@ export default function useSpeedTest() {
     return final;
   }
 
-  const calculateAccurateScore = (pingMs: number, downloadMbps: number, uploadMbps: number, jitterMs: number): number => {
+  const calculateAccurateScore = (pingMs: number, downloadMbps: number, uploadMbps: number): number => {
     let score = 0;
     
     if (downloadMbps >= 100) score += 40;
@@ -384,138 +384,137 @@ export default function useSpeedTest() {
     setTimePattern(pattern);
   };
 
-async function runTest(
-  source: "manual" | "auto" = "manual", 
-  selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean },
-  isp?: string,
-  originalIsp?: string,
-  externalNetworkType?: string,
-  externalIp?: string  // ADD THIS NEW PARAMETER
-) {
-  if (runningRef.current) {
-    console.log("Test blocked: Already running");
-    return;
-  }
-
-  const now = Date.now();
-  if (now - testStartTimeRef.current < 2000) {
-    console.log("Test blocked: Too rapid consecutive test");
-    return;
-  }
-  testStartTimeRef.current = now;
-
-  if (source === "auto" && now - lastFullTestTimeRef.current < FULL_TEST_COOLDOWN) {
-    console.log("Auto test blocked: Cooldown active");
-    return;
-  }
-
-  lastFullTestTimeRef.current = now;
-  runningRef.current = true;
-  setRunning(true);
-
-  setDownloadHistory([]);
-  setUploadHistory([]);
-  setPingHistory([]);
-  setJitterHistory([]);
-  setBufferbloat(null);
-  
-  let p: number = 0;
-  let j: number = 0;
-  let d: number = 0;
-  let u: number = 0;
-
-  try {
-    const shouldRunPing = selection === undefined || selection.ping !== false;
-    if (shouldRunPing) {
-      setPhase("ping");
-      const pingResult = await testPing();
-      p = pingResult.ping;
-      j = pingResult.jitter;
-    } else {
-      p = ping ?? 0;
-      j = jitter ?? 0;
+  // REMOVED the unused 'originalIsp' parameter
+  async function runTest(
+    source: "manual" | "auto" = "manual", 
+    selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean },
+    isp?: string,
+    externalNetworkType?: string,
+    externalIp?: string
+  ) {
+    if (runningRef.current) {
+      console.log("Test blocked: Already running");
+      return;
     }
 
-    const shouldRunDownload = selection === undefined || selection.download !== false;
-    if (shouldRunDownload) {
-      setPhase("download");
-      d = await testDownload(p);
-    } else {
-      d = download ?? 0;
+    const now = Date.now();
+    if (now - testStartTimeRef.current < 2000) {
+      console.log("Test blocked: Too rapid consecutive test");
+      return;
+    }
+    testStartTimeRef.current = now;
+
+    if (source === "auto" && now - lastFullTestTimeRef.current < FULL_TEST_COOLDOWN) {
+      console.log("Auto test blocked: Cooldown active");
+      return;
     }
 
-    const shouldRunUpload = selection === undefined || selection.upload !== false;
-    if (shouldRunUpload) {
-      setPhase("upload");
-      u = await testUpload();
-    } else {
-      u = upload ?? 0;
-    }
+    lastFullTestTimeRef.current = now;
+    runningRef.current = true;
+    setRunning(true);
 
-    setPhase("analyzing");
+    setDownloadHistory([]);
+    setUploadHistory([]);
+    setPingHistory([]);
+    setJitterHistory([]);
+    setBufferbloat(null);
+    
+    let p: number = 0;
+    let j: number = 0;
+    let d: number = 0;
+    let u: number = 0;
 
-    if (d > 0 && p > 0) {
-      const detectedType = detectNetworkType(d, p);
-      if (detectedType !== "unknown") {
-        setNetworkType(detectedType);
+    try {
+      const shouldRunPing = selection === undefined || selection.ping !== false;
+      if (shouldRunPing) {
+        setPhase("ping");
+        const pingResult = await testPing();
+        p = pingResult.ping;
+        j = pingResult.jitter;
+      } else {
+        p = ping ?? 0;
+        j = jitter ?? 0;
       }
-    }
 
-    const accurateScore = calculateAccurateScore(p, d, u, j);
-    const result = analyzeConnection(p, d, u);
-    const insightList = generateInsights(p, d, u);
-    
-    if (j > 30) {
-      insightList.push("⚠️ High jitter detected - Connection may be unstable for real-time applications");
-    } else if (j > 15) {
-      insightList.push("📊 Moderate jitter - May affect competitive gaming");
-    }
-    
-    if (d > 100) {
-      insightList.push("🚀 Excellent download speed! Perfect for 8K streaming and large downloads");
-    } else if (d > 50) {
-      insightList.push("⚡ Great download speed! Suitable for 4K streaming");
-    }
-    
-    const modeOutput = analyzeByMode(mode, p, j, d, u);
+      const shouldRunDownload = selection === undefined || selection.download !== false;
+      if (shouldRunDownload) {
+        setPhase("download");
+        d = await testDownload(p);
+      } else {
+        d = download ?? 0;
+      }
 
-    setReport(result);
-    setScore(accurateScore);
-    setInsights(insightList);
-    setModeResult(modeOutput);
+      const shouldRunUpload = selection === undefined || selection.upload !== false;
+      if (shouldRunUpload) {
+        setPhase("upload");
+        u = await testUpload();
+      } else {
+        u = upload ?? 0;
+      }
 
-    setPhase("complete");
+      setPhase("analyzing");
 
-    if (shouldRunPing || shouldRunDownload || shouldRunUpload) {
-      const finalNetworkType = externalNetworkType || networkType;
-      const detectedIsp = isp || "Unknown";
+      if (d > 0 && p > 0) {
+        const detectedType = detectNetworkType(d, p);
+        if (detectedType !== "unknown") {
+          setNetworkType(detectedType);
+        }
+      }
+
+      const accurateScore = calculateAccurateScore(p, d, u);
+      const result = analyzeConnection(p, d, u);
+      const insightList = generateInsights(p, d, u);
       
-      // UPDATED: Save result with IP address for network fingerprinting
-      saveResult({
-        date: new Date().toLocaleString(),
-        ping: p,
-        jitter: j,
-        download: d,
-        upload: u,
-        score: accurateScore,
-        customName: detectedIsp,
-        isp: detectedIsp,
-        networkType: finalNetworkType,
-        ip: externalIp || "unknown"  // ADD THIS LINE - pass the IP
-      });
+      if (j > 30) {
+        insightList.push("⚠️ High jitter detected - Connection may be unstable for real-time applications");
+      } else if (j > 15) {
+        insightList.push("📊 Moderate jitter - May affect competitive gaming");
+      }
+      
+      if (d > 100) {
+        insightList.push("🚀 Excellent download speed! Perfect for 8K streaming and large downloads");
+      } else if (d > 50) {
+        insightList.push("⚡ Great download speed! Suitable for 4K streaming");
+      }
+      
+      const modeOutput = analyzeByMode(mode, p, j, d, u);
 
-      saveBestScore(accurateScore);
-      saveBestStats(accurateScore, d, u, p);
-      analyzeHistoryPatterns();
+      setReport(result);
+      setScore(accurateScore);
+      setInsights(insightList);
+      setModeResult(modeOutput);
+
+      setPhase("complete");
+
+      if (shouldRunPing || shouldRunDownload || shouldRunUpload) {
+        const finalNetworkType = externalNetworkType || networkType;
+        const detectedIsp = isp || "Unknown";
+        
+        saveResult({
+          date: new Date().toLocaleString(),
+          ping: p,
+          jitter: j,
+          download: d,
+          upload: u,
+          score: accurateScore,
+          customName: detectedIsp,
+          isp: detectedIsp,
+          networkType: finalNetworkType,
+          ip: externalIp || "unknown"
+        });
+
+        saveBestScore(accurateScore);
+        saveBestStats(accurateScore, d, u, p);
+        analyzeHistoryPatterns();
+      }
+    } catch (error) {
+      console.error("Test failed:", error);
+      setPhase("idle");
+    } finally {
+      runningRef.current = false;
+      setRunning(false);
     }
-  } catch (error) {
-    console.error("Test failed:", error);
-    setPhase("idle");
-  } finally {
-    runningRef.current = false;
-    setRunning(false);
   }
-}
 
   return {
     ping,

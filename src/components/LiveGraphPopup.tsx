@@ -327,10 +327,10 @@ export default function LiveGraphPopup({
     return `${value.toFixed(1)} Mbps`;
   };
 
-  const formatLatency = (value: number | null) => {
-    if (!value) return "--";
-    return `${value.toFixed(1)} ms`;
-  };
+  // const formatLatency = (value: number | null) => {
+  //   if (!value) return "--";
+  //   return `${value.toFixed(1)} ms`;
+  // };
 
   useEffect(() => {
     if (phase === "ping" && testSelection.ping) {

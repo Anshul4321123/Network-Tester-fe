@@ -78,7 +78,7 @@ export default function LiveGraph({ speeds, isLive = false, label = "Speed", gra
     }
     
     // For download/upload speeds
-    const maxSpeed = Math.max(...speeds, 100);
+    // const maxSpeed = Math.max(...speeds, 100);
     return {
       beginAtZero: true,
       title: {

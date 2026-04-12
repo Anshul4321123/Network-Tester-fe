@@ -15,7 +15,7 @@ interface CelebrationPopupProps {
   firstTimeType?: string;
 }
 
-export default function CelebrationPopup({ isOpen, onClose, records, isFirstTime = false, firstTimeType }: CelebrationPopupProps) {
+export default function CelebrationPopup({ isOpen, onClose, records, isFirstTime = false }: CelebrationPopupProps) {
   const [confetti, setConfetti] = useState<{ id: number; x: number; y: number }[]>([]);
 
   useEffect(() => {
@@ -70,8 +70,7 @@ export default function CelebrationPopup({ isOpen, onClose, records, isFirstTime
     }
   };
 
-  const isRecordBreak = records.some(r => r.oldValue !== r.newValue);
-  const showComparison = !isFirstTime && isRecordBreak;
+
   
   // For first time, show completion checkmarks
   // For record breaks, show improvement arrows

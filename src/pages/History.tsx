@@ -20,7 +20,7 @@ export default function History() {
   const [selectedMetric, setSelectedMetric] = useState<"download" | "upload" | "ping" | "jitter" | "score">("download");
   const [timeRange, setTimeRange] = useState<"all" | "week" | "month" | "year">("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  // const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(20);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);

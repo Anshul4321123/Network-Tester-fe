@@ -1,5 +1,5 @@
 // components/AdvancedDetails.tsx - Fixed with separate columns for Your Name and Original ISP
-import { getBestScore, getBestStats, type SpeedTestRecord, type BestStats } from "../utils/storage";
+import { getBestScore, getBestStats, type SpeedTestRecord } from "../utils/storage";
 import { useState, useEffect } from "react";
 
 interface AdvancedDetailsProps {
@@ -58,9 +58,6 @@ export default function AdvancedDetails({
   monitorPing,
   isTabVisible,
   isTestActive,
-  download,
-  upload,
-  phase,
 }: AdvancedDetailsProps) {
   const bestScore = getBestScore();
   const bestStats = getBestStats();
@@ -68,7 +65,7 @@ export default function AdvancedDetails({
   const [lastActionTime, setLastActionTime] = useState<number | null>(null);
   const [timeUntilNextPing, setTimeUntilNextPing] = useState<number>(300);
   const [timeUntilNextFullTest, setTimeUntilNextFullTest] = useState<number>(1800);
-  const [showMonitoringInfo, setShowMonitoringInfo] = useState(false);
+  const [, setShowMonitoringInfo] = useState(false);
   
   const trendData = calculateTrend(history);
 

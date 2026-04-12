@@ -28,7 +28,7 @@ import {
   type BestStats,
   type Achievements 
 } from "../utils/storage";
-import { detectISP, getCachedISP, type ISPInfo as ISPInfoType } from "../utils/ispDetector";
+import { detectISP, type ISPInfo as ISPInfoType } from "../utils/ispDetector";
 
 interface RecordBreak {
   type: string;
@@ -392,38 +392,37 @@ export default function Home() {
   };
 
   // CRITICAL FIX: Refresh ISP BEFORE running the test
-  const handleRunTest = async () => {
-    console.log("🔄 Refreshing ISP before test...");
-    
-    // Force fresh ISP detection before running the test
-    localStorage.removeItem("cached_isp_info");
-    const freshInfo = await detectISP();
-    
-    let currentOriginalIsp = "Unknown";
-    let currentIp = "unknown";
-    
-    if (freshInfo) {
-      currentOriginalIsp = freshInfo.isp || "Unknown";
-      currentIp = freshInfo.ip || "unknown";
-      // Update state with fresh info
-      setOriginalIspName(currentOriginalIsp);
-      setIspInfo(freshInfo);
-      setPreviousIp(currentIp);
-      localStorage.setItem("cached_isp_info", JSON.stringify({ ...freshInfo, timestamp: Date.now() }));
-    } else {
-      // Fallback to existing values
-      currentOriginalIsp = originalIspName || ispInfo?.isp || "Unknown";
-      currentIp = ispInfo?.ip || "unknown";
-    }
-    
-    const finalNetworkType = networkType || "unknown";
-    
-    console.log("🚀 Running test with ISP:", currentOriginalIsp);
-    console.log("📡 IP:", currentIp);
-    
-    // Run the test with the fresh ISP info
-    runTest("manual", testSelection, currentOriginalIsp, undefined, finalNetworkType, currentIp);
-  };
+// In Home.tsx, update the handleRunTest function:
+
+const handleRunTest = async () => {
+  console.log("🔄 Refreshing ISP before test...");
+  
+  localStorage.removeItem("cached_isp_info");
+  const freshInfo = await detectISP();
+  
+  let currentOriginalIsp = "Unknown";
+  let currentIp = "unknown";
+  
+  if (freshInfo) {
+    currentOriginalIsp = freshInfo.isp || "Unknown";
+    currentIp = freshInfo.ip || "unknown";
+    setOriginalIspName(currentOriginalIsp);
+    setIspInfo(freshInfo);
+    setPreviousIp(currentIp);
+    localStorage.setItem("cached_isp_info", JSON.stringify({ ...freshInfo, timestamp: Date.now() }));
+  } else {
+    currentOriginalIsp = originalIspName || ispInfo?.isp || "Unknown";
+    currentIp = ispInfo?.ip || "unknown";
+  }
+  
+  const finalNetworkType = networkType || "unknown";
+  
+  console.log("🚀 Running test with ISP:", currentOriginalIsp);
+  console.log("📡 IP:", currentIp);
+  
+  // Now only 5 parameters: source, selection, isp, externalNetworkType, externalIp
+  runTest("manual", testSelection, currentOriginalIsp, finalNetworkType, currentIp);
+};
 
   const getBackgroundStyle = () => {
     if (running) {

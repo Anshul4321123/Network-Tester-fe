@@ -34,7 +34,6 @@ export default function Hero({
   onRunTest,
   mode,
   onModeChange,
-  testSelection,
   setTestSelection,
   showLiveGraph,
   onToggleLiveGraph,

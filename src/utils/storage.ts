@@ -55,7 +55,7 @@ const ISP_MAPPING_KEY = "isp_mapping_v2";
 // VPN DETECTION FUNCTIONS - FIXED
 // ============================================
 
-export function isVPNLikely(ip: string, ispName: string): boolean {
+export function isVPNLikely(ispName: string): boolean {
   const lowerISP = ispName.toLowerCase();
   
   // First, check if it's a known residential ISP - definitely NOT VPN
@@ -131,7 +131,7 @@ export function generateNetworkFingerprint(ispName: string, networkType: string)
 }
 
 export function saveNetworkIpPrefix(ip: string, ispName: string) {
-  const isVPN = isVPNLikely(ip, ispName);
+  const isVPN = isVPNLikely( ispName);
   setVPNState(isVPN);
   
   if (isVPN) {
