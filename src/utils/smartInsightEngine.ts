@@ -1,4 +1,4 @@
-// utils/smartInsightEngine.ts - Complete with proper interface
+// utils/smartInsightEngine.ts - UPDATED with throttling detection
 export interface TestMetrics {
   ping: number | null;
   download: number | null;
@@ -7,6 +7,8 @@ export interface TestMetrics {
   bufferbloat: number | null;
   networkType: string;
   score: number | null;
+  bestDownload?: number;  // ADD THIS
+  bestPing?: number;      // ADD THIS (optional)
 }
 
 export interface SmartInsight {
@@ -21,7 +23,6 @@ export interface SmartInsight {
 // Calculate what percentile the user is in (estimated)
 export function calculatePercentile(download: number | null): number {
   if (!download) return 50;
-  // Rough estimates based on global averages
   if (download >= 500) return 98;
   if (download >= 250) return 95;
   if (download >= 100) return 88;
@@ -33,7 +34,7 @@ export function calculatePercentile(download: number | null): number {
 }
 
 export function generateSmartInsight(metrics: TestMetrics): SmartInsight {
-  const { ping, download, upload, jitter, bufferbloat, networkType } = metrics;
+  const { ping, download, upload, jitter, bufferbloat, networkType, score, bestDownload } = metrics;
   const percentile = calculatePercentile(download);
 
   if (!ping || !download || !upload) {
@@ -43,6 +44,21 @@ export function generateSmartInsight(metrics: TestMetrics): SmartInsight {
       icon: "💡",
       percentile: 50,
     };
+  }
+
+  // NEW: Throttling detection (before other checks)
+  if (bestDownload && bestDownload > 0 && download > 0) {
+    const dropPercent = ((bestDownload - download) / bestDownload) * 100;
+    if (dropPercent > 50 && ping < 50) {
+      return {
+        message: "⚠️ Possible ISP throttling detected",
+        type: "warning",
+        icon: "⛔",
+        detail: `Your download speed (${download.toFixed(0)} Mbps) is much lower than your best (${bestDownload.toFixed(0)} Mbps), but latency is good.`,
+        action: "Try using a VPN to test if speeds improve",
+        percentile,
+      };
+    }
   }
 
   // Contradiction handler (Fast speed + High latency)
@@ -87,7 +103,7 @@ export function generateSmartInsight(metrics: TestMetrics): SmartInsight {
     };
   }
 
-  // Priority 2: ISP Throttling
+  // Priority 2: ISP Throttling (alternative detection)
   if (download < 20 && upload > 20 && networkType !== "wifi") {
     return {
       message: "🔒 Possible ISP throttling — upload is faster than download",
@@ -224,7 +240,7 @@ export function generateSmartInsight(metrics: TestMetrics): SmartInsight {
   };
 }
 
-// Pattern detection for alerts
+// Pattern detection for alerts (unchanged)
 export interface TimePattern {
   hour: number;
   averageSpeed: number;
@@ -233,24 +249,16 @@ export interface TimePattern {
 }
 
 export function detectTimePatterns(history: any[]): TimePattern | null {
-  if (!history || !Array.isArray(history) || history.length < 3) {
-    return null;
-  }
+  if (!history || !Array.isArray(history) || history.length < 3) return null;
 
   const buckets = Array.from({ length: 24 }, () => [] as number[]);
 
   for (const record of history) {
     if (!record || typeof record !== 'object') continue;
-    
     let hour = record.hour;
     if (hour === undefined && record.date) {
-      try {
-        hour = new Date(record.date).getHours();
-      } catch (e) {
-        continue;
-      }
+      try { hour = new Date(record.date).getHours(); } catch { continue; }
     }
-    
     if (hour !== undefined && typeof hour === 'number' && hour >= 0 && hour <= 23) {
       const download = record.download;
       if (download !== undefined && typeof download === 'number' && download > 0) {
@@ -259,11 +267,7 @@ export function detectTimePatterns(history: any[]): TimePattern | null {
     }
   }
 
-  const avgByHour = buckets.map(arr => {
-    if (arr.length === 0) return null;
-    return arr.reduce((a, b) => a + b, 0) / arr.length;
-  });
-
+  const avgByHour = buckets.map(arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
   const validAverages = avgByHour.filter((v): v is number => v !== null);
   if (validAverages.length === 0) return null;
 
@@ -272,7 +276,6 @@ export function detectTimePatterns(history: any[]): TimePattern | null {
 
   let worstHour = -1;
   let worstAvg = Infinity;
-  
   for (let i = 0; i < avgByHour.length; i++) {
     const avg = avgByHour[i];
     if (avg !== null && avg < worstAvg) {
@@ -282,36 +285,20 @@ export function detectTimePatterns(history: any[]): TimePattern | null {
   }
 
   if (worstHour === -1) return null;
-  
   let dropPercent = Math.round(((maxAvg - worstAvg) / maxAvg) * 100);
   dropPercent = Math.min(dropPercent, 90);
-  
   if (dropPercent < 25) return null;
 
   let hourStr: string;
-  if (worstHour === 0) {
-    hourStr = "midnight";
-  } else if (worstHour < 12) {
-    hourStr = `${worstHour} AM`;
-  } else if (worstHour === 12) {
-    hourStr = "noon";
-  } else {
-    hourStr = `${worstHour - 12} PM`;
-  }
+  if (worstHour === 0) hourStr = "midnight";
+  else if (worstHour < 12) hourStr = `${worstHour} AM`;
+  else if (worstHour === 12) hourStr = "noon";
+  else hourStr = `${worstHour - 12} PM`;
 
   let message: string;
-  if (dropPercent >= 70) {
-    message = `📉 Significant speed drop around ${hourStr} — possible network congestion`;
-  } else if (dropPercent >= 50) {
-    message = `📉 Your speed drops noticeably around ${hourStr} — peak hour congestion likely`;
-  } else {
-    message = `📉 Your speed drops around ${hourStr} — consider testing at different times`;
-  }
+  if (dropPercent >= 70) message = `📉 Significant speed drop around ${hourStr} — possible network congestion`;
+  else if (dropPercent >= 50) message = `📉 Your speed drops noticeably around ${hourStr} — peak hour congestion likely`;
+  else message = `📉 Your speed drops around ${hourStr} — consider testing at different times`;
 
-  return {
-    hour: worstHour,
-    averageSpeed: Math.round(worstAvg),
-    dropPercent: dropPercent,
-    message: message,
-  };
+  return { hour: worstHour, averageSpeed: Math.round(worstAvg), dropPercent, message };
 }

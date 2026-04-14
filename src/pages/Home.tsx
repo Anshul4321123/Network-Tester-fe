@@ -706,7 +706,7 @@ export default function Home() {
 
         {!isTestActive && score !== null && (
           <SmartInsight 
-            metrics={{ ping, download, upload, jitter, bufferbloat, networkType, score }} 
+            metrics={{ ping, download, upload, jitter, bufferbloat, networkType, score, bestDownload: bestStats?.bestDownload || 0  }} 
           />
         )}
 

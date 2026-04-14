@@ -1,4 +1,4 @@
-// utils/connectionAnalyzer.ts
+// utils/connectionAnalyzer.ts - UPGRADED with throttling detection
 export interface ConnectionReport {
   quality: string;
   streaming: string;
@@ -59,20 +59,25 @@ export function analyzeConnection(
   };
 }
 
+// UPDATED: generateInsights with throttling detection
 export function generateInsights(
   ping: number,
   download: number,
-  upload: number
+  upload: number,
+  bestDownload?: number,
+  bestPing?: number
 ): string[] {
 
   const insights: string[] = [];
 
+  // Ping insights
   if (ping > 80) {
     insights.push("⚠️ High ping — gaming and video calls may lag");
   } else if (ping < 30) {
     insights.push("✅ Low latency — great for gaming");
   }
 
+  // Download insights
   if (download > 25) {
     insights.push("✅ Good for 4K streaming");
   } else if (download > 10) {
@@ -81,6 +86,7 @@ export function generateInsights(
     insights.push("❌ Streaming quality may be limited");
   }
 
+  // Gaming insights
   if (ping < 30 && download > 25) {
     insights.push("🎮 Excellent for competitive gaming");
   } else if (ping < 60) {
@@ -89,10 +95,22 @@ export function generateInsights(
     insights.push("❌ Not suitable for competitive gaming");
   }
 
+  // Upload insights
   if (upload < 2) {
     insights.push("❌ Poor upload — video calls may lag");
   } else if (upload > 10) {
     insights.push("📞 Great for video calls & uploads");
+  }
+
+  // NEW: Throttling detection
+  // Only flag if download is low (< 50% of best) AND ping is low (< 50ms) AND jitter is low (jitter not available here, but we can approximate)
+  // Since we don't have jitter in this function, we'll rely on ping stability.
+  // For better accuracy, we'll check if ping is low (stable) and download is significantly lower than best.
+  if (bestDownload && bestDownload > 0 && download > 0) {
+    const dropPercent = ((bestDownload - download) / bestDownload) * 100;
+    if (dropPercent > 50 && ping < 50) {
+      insights.push("⚠️ Possible ISP throttling — speed is low but latency is good");
+    }
   }
 
   return insights;
@@ -260,7 +278,6 @@ export function analyzeByMode(
 
   switch (mode) {
     case "gaming":
-      // More realistic thresholds for gaming
       if (ping < 30 && jitter < 20 && download >= 25)
         return "🎮 Excellent for gaming! Low latency & stable connection.";
       else if (ping < 50 && jitter < 30 && download >= 15)
