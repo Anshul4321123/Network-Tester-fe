@@ -1,17 +1,22 @@
-// components/NetworkInfo.tsx - Fixed TypeScript errors with green 5G
+// components/NetworkInfo.tsx - Uses test results, no auto-refresh on triggerRefresh
 import { useEffect, useState, useRef } from "react";
 
 interface NetworkInfoProps {
   triggerRefresh?: number;
   onNetworkDetected?: (type: string) => void;
+  testPing?: number | null;
+  testJitter?: number | null;
+  testDownload?: number | null;
+  testUpload?: number | null;
 }
 
 interface NetworkInfoState {
   type: string;
   latency: number | null;
   isMeasuring: boolean;
-  isThrottled: boolean;
   jitter: number | null;
+  download: number | null;
+  upload: number | null;
 }
 
 interface ConfigType {
@@ -26,26 +31,49 @@ interface ConfigType {
   signalColor: string;
   qualityBadge: { text: string; color: string } | null;
   jitter: number | null;
-  isThrottled: boolean;
 }
 
-export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: NetworkInfoProps) {
+export default function NetworkInfo({  
+  onNetworkDetected,
+  testPing,
+  testJitter,
+  testDownload,
+  testUpload
+}: NetworkInfoProps) {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfoState>({
     type: "unknown",
     latency: null,
     isMeasuring: false,
-    isThrottled: false,
     jitter: null,
+    download: null,
+    upload: null,
   });
   
   const hasMeasured = useRef(false);
   const measureInProgress = useRef(false);
   const BASE_URL = import.meta.env.VITE_BASE_URL;
 
+  const getNetworkType = (latency: number, browserType: string | undefined): string => {
+    if (browserType) {
+      switch (browserType) {
+        case "4g": return "4G";
+        case "3g": return "3G";
+        case "2g": return "2G";
+        case "slow-2g": return "2G";
+        default: break;
+      }
+    }
+    if (latency < 40) return "5G";
+    if (latency < 70) return "4G";
+    if (latency < 120) return "3G";
+    if (latency < 250) return "2G";
+    return "1G";
+  };
+
+  // Initial quick detection (only once)
   const quickMeasure = async () => {
     if (measureInProgress.current || hasMeasured.current) return;
     measureInProgress.current = true;
-    
     setNetworkInfo(prev => ({ ...prev, isMeasuring: true }));
     
     try {
@@ -55,51 +83,37 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         headers: { 'Cache-Control': 'no-cache' }
       });
       const latency = performance.now() - start;
-      
-      let type = "unknown";
-      if (latency < 40) type = "5G";
-      else if (latency < 70) type = "4G";
-      else if (latency < 120) type = "3G";
-      else if (latency < 250) type = "2G";
-      else type = "1G";
-      
       const connection = (navigator as any).connection;
       const browserType = connection?.effectiveType;
-      let isThrottled = false;
-      if (browserType === "4g" && latency > 100) isThrottled = true;
-      else if (browserType === "3g" && latency > 200) isThrottled = true;
+      const type = getNetworkType(latency, browserType);
       
-      setNetworkInfo({
+      setNetworkInfo(prev => ({
+        ...prev,
         type,
         latency,
         isMeasuring: false,
-        isThrottled,
         jitter: null,
-      });
+        download: null,
+        upload: null,
+      }));
       
       hasMeasured.current = true;
-      
-      if (onNetworkDetected) {
-        onNetworkDetected(type.toLowerCase());
-      }
-      
+      if (onNetworkDetected) onNetworkDetected(type.toLowerCase());
     } catch (error) {
       setNetworkInfo(prev => ({ ...prev, isMeasuring: false }));
     }
-    
     measureInProgress.current = false;
   };
 
+  // Manual full measurement (when user clicks refresh button)
   const fullMeasure = async () => {
     if (measureInProgress.current) return;
     measureInProgress.current = true;
-    
     setNetworkInfo(prev => ({ ...prev, isMeasuring: true }));
     
     try {
       const pingCount = 5;
       const pingTimes: number[] = [];
-      
       for (let i = 0; i < pingCount; i++) {
         const start = performance.now();
         await fetch(`${BASE_URL}/ping`, {
@@ -108,51 +122,33 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         });
         pingTimes.push(performance.now() - start);
       }
-      
       const avgLatency = pingTimes.reduce((a, b) => a + b, 0) / pingTimes.length;
-      
       let jitter = 0;
       if (pingTimes.length > 1) {
-        const differences: number[] = [];
+        const diffs: number[] = [];
         for (let i = 1; i < pingTimes.length; i++) {
-          differences.push(Math.abs(pingTimes[i] - pingTimes[i - 1]));
+          diffs.push(Math.abs(pingTimes[i] - pingTimes[i - 1]));
         }
-        jitter = differences.reduce((a, b) => a + b, 0) / differences.length;
+        jitter = diffs.reduce((a, b) => a + b, 0) / diffs.length;
       }
-      
       const connection = (navigator as any).connection;
       const browserType = connection?.effectiveType;
-      
-      let isThrottled = false;
-      if (browserType === "4g" && avgLatency > 100) isThrottled = true;
-      else if (browserType === "3g" && avgLatency > 200) isThrottled = true;
-      
-      let type = "unknown";
-      if (avgLatency < 35) type = "5G";
-      else if (avgLatency < 55) type = "4G+";
-      else if (avgLatency < 80) type = "4G";
-      else if (avgLatency < 120) type = "3G";
-      else if (avgLatency < 250) type = "2G";
-      else type = "1G";
+      const type = getNetworkType(avgLatency, browserType);
       
       setNetworkInfo({
         type,
         latency: avgLatency,
         isMeasuring: false,
-        isThrottled,
         jitter,
+        download: null,
+        upload: null,
       });
       
       hasMeasured.current = true;
-      
-      if (onNetworkDetected) {
-        onNetworkDetected(type.toLowerCase());
-      }
-      
+      if (onNetworkDetected) onNetworkDetected(type.toLowerCase());
     } catch (error) {
       setNetworkInfo(prev => ({ ...prev, isMeasuring: false }));
     }
-    
     measureInProgress.current = false;
   };
 
@@ -160,11 +156,23 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
     quickMeasure();
   }, []);
 
+  // 🔥 IMPORTANT: Do NOT auto‑refresh on triggerRefresh.
+  // Instead, let the test results update the display.
+  // The refresh button still works.
+
+  // When real test results arrive, override everything
   useEffect(() => {
-    if (triggerRefresh && triggerRefresh > 0) {
-      fullMeasure();
+    if (testPing !== undefined && testPing !== null) {
+      setNetworkInfo(prev => ({
+        ...prev,
+        latency: testPing,
+        jitter: testJitter ?? prev.jitter,
+        download: testDownload ?? prev.download,
+        upload: testUpload ?? prev.upload,
+        // Keep the network type (browser-reported) unchanged
+      }));
     }
-  }, [triggerRefresh]);
+  }, [testPing, testJitter, testDownload, testUpload]);
 
   const getConfig = (): ConfigType => {
     if (!navigator.onLine) {
@@ -180,7 +188,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         signalColor: "#64748b",
         qualityBadge: null,
         jitter: null,
-        isThrottled: false,
       };
     }
     
@@ -197,12 +204,11 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         signalColor: "#94a3b8",
         qualityBadge: null,
         jitter: null,
-        isThrottled: false,
       };
     }
     
+    const latency = networkInfo.latency;
     const getSignalInfo = () => {
-      const latency = networkInfo.latency;
       if (!latency) return { bars: 2, text: "Fair", color: "#f59e0b" };
       if (latency < 35) return { bars: 4, text: "Excellent", color: "#10b981" };
       if (latency < 55) return { bars: 4, text: "Great", color: "#10b981" };
@@ -211,10 +217,17 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
       if (latency < 250) return { bars: 1, text: "Weak", color: "#ef4444" };
       return { bars: 1, text: "Very Weak", color: "#dc2626" };
     };
-    
     const signal = getSignalInfo();
     
     const getEstimatedSpeed = () => {
+      if (networkInfo.download && networkInfo.download > 0) {
+        if (networkInfo.download >= 100) return "100+ Mbps";
+        if (networkInfo.download >= 50) return "50-100 Mbps";
+        if (networkInfo.download >= 25) return "25-50 Mbps";
+        if (networkInfo.download >= 10) return "10-25 Mbps";
+        if (networkInfo.download >= 5) return "5-10 Mbps";
+        return "<5 Mbps";
+      }
       switch (networkInfo.type) {
         case "5G": return "100+ Mbps";
         case "4G+": return "50-100 Mbps";
@@ -240,7 +253,7 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
     
     const getGradient = () => {
       switch (networkInfo.type) {
-        case "5G": return "linear-gradient(135deg, #10b981 0%, #059669 100%)"; // Emerald Green
+        case "5G": return "linear-gradient(135deg, #10b981 0%, #059669 100%)";
         case "4G+": return "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)";
         case "4G": return "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)";
         case "3G": return "linear-gradient(135deg, #f59e0b 0%, #d97706 100%)";
@@ -251,7 +264,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
     };
     
     const getQualityBadge = () => {
-      const latency = networkInfo.latency;
       if (!latency) return null;
       if (latency < 35) return { text: "EXCELLENT", color: "#10b981" };
       if (latency < 55) return { text: "GREAT", color: "#10b981" };
@@ -266,13 +278,12 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
       gradient: getGradient(),
       description: getDescription(),
       speed: getEstimatedSpeed(),
-      latency: networkInfo.latency ? `${networkInfo.latency.toFixed(0)} ms` : "? ms",
+      latency: latency ? `${latency.toFixed(0)} ms` : "? ms",
       signalText: signal.text,
       signalBars: signal.bars,
       signalColor: signal.color,
       qualityBadge: getQualityBadge(),
       jitter: networkInfo.jitter,
-      isThrottled: networkInfo.isThrottled,
     };
   };
 
@@ -288,7 +299,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
       }}
     >
-      {/* Quality Badge */}
       {config.qualityBadge && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8px" }}>
           <span style={{
@@ -304,7 +314,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         </div>
       )}
       
-      {/* Main row */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{
@@ -348,7 +357,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         </div>
       </div>
       
-      {/* Signal bars - Bottom to top */}
       <div style={{ marginTop: "12px", display: "flex", alignItems: "center", gap: "8px" }}>
         <div style={{ display: "flex", gap: "3px", alignItems: "flex-end", height: "20px" }}>
           {[1, 2, 3, 4].map((bar) => (
@@ -368,7 +376,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         </span>
       </div>
       
-      {/* Jitter indicator - Safe check with proper null handling */}
       {config.jitter !== null && config.jitter > 0 && (
         <div style={{ 
           marginTop: "6px", 
@@ -388,24 +395,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         </div>
       )}
       
-      {/* Throttling warning */}
-      {config.isThrottled && (
-        <div style={{ 
-          marginTop: "8px", 
-          background: "rgba(239,68,68,0.3)",
-          borderRadius: "6px",
-          padding: "4px 8px",
-          fontSize: "9px",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-        }}>
-          <span>⚠️</span>
-          <span>Throttling detected - Actual speed may differ</span>
-        </div>
-      )}
-      
-      {/* Helpful tip for users */}
       <div style={{ 
         marginTop: "10px", 
         fontSize: "9px", 
@@ -421,7 +410,6 @@ export default function NetworkInfo({ triggerRefresh, onNetworkDetected }: Netwo
         <span>Run a speed test for accurate results</span>
       </div>
       
-      {/* Refresh button */}
       <div style={{ marginTop: "8px", display: "flex", justifyContent: "flex-end" }}>
         <button
           onClick={() => fullMeasure()}

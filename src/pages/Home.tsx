@@ -700,7 +700,14 @@ export default function Home() {
           </div>
         )}
 
-        <NetworkInfo triggerRefresh={testCompleted} onNetworkDetected={(type) => console.log("Network type:", type)} />
+        <NetworkInfo 
+          triggerRefresh={testCompleted} 
+          onNetworkDetected={(type) => console.log("Network type:", type)}
+          testPing={ping}
+          testJitter={jitter}
+          testDownload={download}
+          testUpload={upload}
+        />
 
         {timePattern && <HealthAlert pattern={timePattern} />}
 
