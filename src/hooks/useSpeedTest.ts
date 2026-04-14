@@ -227,7 +227,7 @@ export default function useSpeedTest() {
 
         let workerBytes = 0;
         let lastSampleTime = performance.now();
-        let lastSampleBytes = 0;
+        // let lastSampleBytes;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -245,7 +245,7 @@ export default function useSpeedTest() {
           // Sample speed every second for potential later use (ignored now)
           if (now - lastSampleTime >= 1000) {
             lastSampleTime = now;
-            lastSampleBytes = workerBytes;
+            // lastSampleBytes = workerBytes;
           }
         }
       } catch (err) {}

@@ -65,7 +65,6 @@ export function generateInsights(
   download: number,
   upload: number,
   bestDownload?: number,
-  bestPing?: number
 ): string[] {
 
   const insights: string[] = [];

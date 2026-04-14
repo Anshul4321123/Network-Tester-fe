@@ -34,7 +34,7 @@ export function calculatePercentile(download: number | null): number {
 }
 
 export function generateSmartInsight(metrics: TestMetrics): SmartInsight {
-  const { ping, download, upload, jitter, bufferbloat, networkType, score, bestDownload } = metrics;
+  const { ping, download, upload, jitter, bufferbloat, networkType, bestDownload } = metrics;
   const percentile = calculatePercentile(download);
 
   if (!ping || !download || !upload) {
