@@ -1,9 +1,11 @@
-// pages/Info.tsx - Simple Surprise with Explosion
+// pages/Info.tsx - Fixed version
 import { useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 
 export default function Info() {
   const [showSupportPopup, setShowSupportPopup] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const navigate = useNavigate(); // Add this
 
   const playExplosionSound = () => {
     if (audioRef.current) {
@@ -23,7 +25,10 @@ export default function Info() {
   };
 
   const handleDevClick = () => {
-    window.open("/dev-message", "_blank");
+    // Use navigate instead of window.open for same-tab navigation
+    navigate("/dev-message");
+    // OR if you want new tab, use this:
+    // window.open("/dev-message", "_blank", "noopener,noreferrer");
   };
 
   const closePopup = () => {
