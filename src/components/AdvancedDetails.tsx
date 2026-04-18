@@ -1,4 +1,4 @@
-// components/AdvancedDetails.tsx - Fixed with separate columns for Your Name and Original ISP
+// components/AdvancedDetails.tsx - Simplified (no ISP dependencies)
 import { getBestScore, getBestStats, type SpeedTestRecord } from "../utils/storage";
 import { useState, useEffect } from "react";
 
@@ -163,11 +163,6 @@ export default function AdvancedDetails({
   };
 
   const status = getMonitoringStatus();
-
-  // Helper to check if ISP is customized
-  const isCustomized = (record: SpeedTestRecord) => {
-    return record.originalIsp && record.originalIsp !== (record.customName || record.isp);
-  };
 
   return (
     <details
@@ -410,7 +405,7 @@ export default function AdvancedDetails({
           )}
         </div>
 
-        {/* History - Last 5 records with separate columns for Your Name and Original ISP */}
+        {/* History - Last 5 records with network name */}
         {history.length > 0 && !isTestActive && (
           <div style={{ marginTop: "16px" }}>
             <div
@@ -446,9 +441,7 @@ export default function AdvancedDetails({
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {history.slice(0, 5).map((record, idx) => {
                 const { date, time } = parseDate(record.date);
-                const customized = isCustomized(record);
-                const customName = record.customName || record.isp || "Unknown";
-                const originalISP = record.originalIsp || "Unknown";
+                const networkName = record.networkName || "Unknown Network";
                 
                 return (
                   <div
@@ -484,7 +477,7 @@ export default function AdvancedDetails({
                       </div>
                     </div>
                     
-                    {/* Row 2: Your Name and Original ISP */}
+                    {/* Row 2: Network Name */}
                     <div style={{ 
                       display: "flex", 
                       gap: "16px", 
@@ -496,14 +489,9 @@ export default function AdvancedDetails({
                     }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                         <span>🏷️</span>
-                        <span style={{ fontWeight: customized ? "600" : "400", color: "#1e293b" }}>
-                          {customName}
+                        <span style={{ fontWeight: "500", color: "#1e293b" }}>
+                          {networkName}
                         </span>
-                        {customized && <span style={{ fontSize: "9px", color: "#10b981" }}>✏️</span>}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <span>🏢</span>
-                        <span style={{ color: "#94a3b8" }}>{originalISP}</span>
                       </div>
                       {record.networkType && (
                         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>

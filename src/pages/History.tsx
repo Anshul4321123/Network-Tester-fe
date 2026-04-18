@@ -1,6 +1,6 @@
-// pages/History.tsx
+// pages/History.tsx - Simplified (no ISP dependencies)
 import { useEffect, useState } from "react";
-import { getHistory, clearHistory, updateHistoryISP, saveISPMapping, type SpeedTestRecord } from "../utils/storage";
+import { getHistory, clearHistory, type SpeedTestRecord } from "../utils/storage";
 import LiveGraph from "../components/LiveGraph";
 import { analyzeTrend, type TrendType } from "../utils/trendAnalyzer";
 import TrendBadge from "../components/TrendBadge";
@@ -20,11 +20,12 @@ export default function History() {
   const [selectedMetric, setSelectedMetric] = useState<"download" | "upload" | "ping" | "jitter" | "score">("download");
   const [timeRange, setTimeRange] = useState<"all" | "week" | "month" | "year">("all");
   const [currentPage, setCurrentPage] = useState(1);
-  // const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(20);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showImportConfirm, setShowImportConfirm] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [editingNetworkName, setEditingNetworkName] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState("");
 
   useEffect(() => {
     loadHistory();
@@ -50,34 +51,38 @@ export default function History() {
     detectTrend([]);
   };
 
-  const handleEditISP = (item: SpeedTestRecord) => {
-    const currentName = item.customName || item.isp || "Unknown";
-    const originalISP = item.originalIsp || currentName;
-    const newName = prompt(
-      `Edit network name\n\nYour Name: ${currentName}\nOriginal ISP: ${originalISP}\n\nEnter a custom name for this network:`,
-      currentName
-    );
-    if (newName && newName.trim() && newName !== currentName) {
-      if (item.networkFingerprint) {
-        saveISPMapping(item.networkFingerprint, originalISP, newName.trim());
-      } else {
-        saveISPMapping(originalISP, originalISP, newName.trim());
-      }
-      updateHistoryISP(originalISP, newName.trim());
+  const handleEditNetworkName = (item: SpeedTestRecord) => {
+    const currentName = item.networkName || "Unknown Network";
+    setEditingNetworkName(item.date);
+    setEditValue(currentName);
+  };
+
+  const saveNetworkName = (item: SpeedTestRecord, newName: string) => {
+    if (newName && newName.trim() && newName !== (item.networkName || "Unknown Network")) {
+      // Update the specific record in localStorage
+      const allHistory = getHistory();
+      const updatedHistory = allHistory.map(record => {
+        if (record.date === item.date && record.ping === item.ping && record.download === item.download) {
+          return { ...record, networkName: newName.trim() };
+        }
+        return record;
+      });
+      localStorage.setItem("speed_test_history", JSON.stringify(updatedHistory));
       loadHistory();
     }
+    setEditingNetworkName(null);
+    setEditValue("");
   };
 
   const handleExportCSV = () => {
     const csvRows = [
-      ["Date", "Time", "Your Name", "Original ISP", "Network Type", "Ping (ms)", "Jitter (ms)", "Download (Mbps)", "Upload (Mbps)", "Score"],
+      ["Date", "Time", "Network Name", "Network Type", "Ping (ms)", "Jitter (ms)", "Download (Mbps)", "Upload (Mbps)", "Score"],
       ...filteredHistory.map(h => {
         const { date, time } = parseDate(h.date);
         return [
           date,
           time,
-          h.customName || h.isp || "Unknown",
-          h.originalIsp || "Unknown",
+          h.networkName || "Unknown Network",
           h.networkType || "Unknown",
           h.ping,
           h.jitter,
@@ -106,20 +111,21 @@ export default function History() {
       
       const importedRecords: SpeedTestRecord[] = [];
       
+      // Skip header row
       for (let i = 1; i < lines.length; i++) {
         const values = lines[i].split(",");
-        if (values.length >= 8 && values[0]) {
+        if (values.length >= 7 && values[0]) {
           const dateStr = `${values[0]}, ${values[1]}`;
           importedRecords.push({
             date: dateStr,
-            ping: parseFloat(values[5]),
-            jitter: parseFloat(values[6]),
-            download: parseFloat(values[7]),
-            upload: parseFloat(values[8]),
-            score: parseInt(values[9]) || 0,
-            customName: values[2] !== "Unknown" ? values[2] : undefined,
-            originalIsp: values[3] !== "Unknown" ? values[3] : undefined,
-            networkType: values[4] !== "Unknown" ? values[4].toLowerCase() : undefined,
+            ping: parseFloat(values[4]),
+            jitter: parseFloat(values[5]) || 0,
+            download: parseFloat(values[6]),
+            upload: parseFloat(values[7]),
+            score: parseInt(values[8]) || 0,
+            networkName: values[2] !== "Unknown Network" ? values[2] : undefined,
+            networkType: values[3] !== "Unknown" ? values[3].toLowerCase() : undefined,
+            hour: new Date(dateStr).getHours(),
           });
         }
       }
@@ -266,11 +272,6 @@ export default function History() {
   const worstValue = getWorstValue();
   const averageValue = getAverageValue();
 
-  // Helper to check if ISP is customized
-  const isCustomized = (record: SpeedTestRecord) => {
-    return record.originalIsp && record.originalIsp !== (record.customName || record.isp);
-  };
-
   return (
     <div
       style={{
@@ -403,7 +404,7 @@ export default function History() {
           </div>
         )}
 
-        {/* Table with separate columns */}
+        {/* Table with Network Name */}
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
             <h2 style={{ fontSize: "18px", fontWeight: "600", color: "#1e293b", display: "flex", alignItems: "center", gap: "8px" }}><span>📜</span> Test History</h2>
@@ -416,8 +417,7 @@ export default function History() {
                 <tr style={{ background: "#f1f5f9", borderBottom: "2px solid #e2e8f0" }}>
                   <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>Date</th>
                   <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>Time</th>
-                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>🏷️ Your Name</th>
-                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>🏢 Original ISP</th>
+                  <th style={{ padding: "12px", textAlign: "left", color: "#475569" }}>🏷️ Network Name</th>
                   <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>📶 Type</th>
                   <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>📡 Ping</th>
                   <th style={{ padding: "12px", textAlign: "right", color: "#475569" }}>⚡ Jitter</th>
@@ -429,25 +429,41 @@ export default function History() {
               </thead>
               <tbody>
                 {paginatedHistory.length === 0 ? (
-                  <tr><td colSpan={11} style={{ textAlign: "center", padding: "60px", color: "#94a3b8" }}><div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div><div>No data available for this time period.</div><div style={{ fontSize: "12px", marginTop: "8px" }}>Run a speed test to see results!</div></td></tr>
+                  <tr>
+                    <td colSpan={10} style={{ textAlign: "center", padding: "60px", color: "#94a3b8" }}>
+                      <div style={{ fontSize: "48px", marginBottom: "12px" }}>📭</div>
+                      <div>No data available for this time period.</div>
+                      <div style={{ fontSize: "12px", marginTop: "8px" }}>Run a speed test to see results!</div>
+                    </td>
+                  </tr>
                 ) : (
                   paginatedHistory.map((item, index) => {
                     const { date, time } = parseDate(item.date);
-                    const customized = isCustomized(item);
-                    const customName = item.customName || item.isp || "Unknown";
-                    const originalISP = item.originalIsp || "Unknown";
+                    const isEditing = editingNetworkName === item.date;
+                    const networkName = item.networkName || "Unknown Network";
                     
                     return (
                       <tr key={index} style={{ borderBottom: "1px solid #e2e8f0", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#f8fafc"} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                         <td style={{ padding: "12px", color: "#64748b", whiteSpace: "nowrap" }}>{date}</td>
                         <td style={{ padding: "12px", color: "#94a3b8", fontSize: "11px", whiteSpace: "nowrap" }}>{time}</td>
                         <td style={{ padding: "12px", textAlign: "left" }}>
-                          <span style={{ fontWeight: customized ? "600" : "400", color: "#1e293b" }}>
-                            {customName}
-                          </span>
-                          {customized && <span style={{ fontSize: "10px", color: "#10b981", marginLeft: "6px" }}>✏️</span>}
+                          {isEditing ? (
+                            <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                              <input
+                              aria-label="name update"
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                style={{ padding: "4px 8px", border: "1px solid #cbd5e1", borderRadius: "6px", fontSize: "12px", width: "120px" }}
+                                autoFocus
+                              />
+                              <button onClick={() => saveNetworkName(item, editValue)} style={{ background: "#10b981", border: "none", borderRadius: "4px", color: "#fff", cursor: "pointer", fontSize: "10px", padding: "4px 8px" }}>Save</button>
+                              <button onClick={() => setEditingNetworkName(null)} style={{ background: "#64748b", border: "none", borderRadius: "4px", color: "#fff", cursor: "pointer", fontSize: "10px", padding: "4px 8px" }}>Cancel</button>
+                            </div>
+                          ) : (
+                            <span style={{ fontWeight: "500", color: "#1e293b" }}>{networkName}</span>
+                          )}
                         </td>
-                        <td style={{ padding: "12px", textAlign: "left", fontSize: "11px", color: "#64748b" }}>{originalISP}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontSize: "11px", color: "#64748b" }}>{item.networkType ? item.networkType.toUpperCase() : "—"}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "500" }}>{item.ping} ms</td>
                         <td style={{ padding: "12px", textAlign: "right", color: "#64748b" }}>{item.jitter} ms</td>
@@ -455,7 +471,9 @@ export default function History() {
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "500", color: "#f59e0b" }}>{formatSpeed(item.upload)}</td>
                         <td style={{ padding: "12px", textAlign: "right", fontWeight: "bold", color: item.score ? getScoreColor(item.score) : "#64748b" }}>{item.score ?? "--"}</td>
                         <td style={{ padding: "12px", textAlign: "center" }}>
-                          <button onClick={() => handleEditISP(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "4px 8px", borderRadius: "6px", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#e2e8f0"} onMouseLeave={(e) => e.currentTarget.style.background = "none"} title="Edit Network Name">✏️</button>
+                          {!isEditing && (
+                            <button onClick={() => handleEditNetworkName(item)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", padding: "4px 8px", borderRadius: "6px", transition: "background 0.2s" }} onMouseEnter={(e) => e.currentTarget.style.background = "#e2e8f0"} onMouseLeave={(e) => e.currentTarget.style.background = "none"} title="Edit Network Name">✏️</button>
+                          )}
                         </td>
                       </tr>
                     );

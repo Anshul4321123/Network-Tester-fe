@@ -1,4 +1,4 @@
-// hooks/useSpeedTest.ts - FULLY OPTIMIZED
+// hooks/useSpeedTest.ts - UPDATED for new storage format
 import { useState, useEffect, useRef } from "react";
 import type { TestPhase } from "../types/speedTestTypes";
 import {
@@ -29,8 +29,8 @@ const DOWNLOAD_STREAMS = 6;
 const DOWNLOAD_DURATION = 8000;
 const UPLOAD_STREAMS = 4;
 const UPLOAD_DURATION = 8000;
-const PING_SAMPLES = 12;          // More samples for better outlier removal
-const WARMUP_DURATION = 2000;     // 2 second warmup download
+const PING_SAMPLES = 12;
+const WARMUP_DURATION = 2000;
 
 export default function useSpeedTest() {
 
@@ -74,7 +74,7 @@ export default function useSpeedTest() {
   };
 
   // ----------------------------------------------------------------------
-  // Network type detection (unchanged)
+  // Network type detection
   // ----------------------------------------------------------------------
   const detectNetworkType = (downloadSpeed: number, pingMs: number): string => {
     if (downloadSpeed >= 100 && pingMs < 30) return "5G";
@@ -100,7 +100,7 @@ export default function useSpeedTest() {
   }, [running]);
 
   // ----------------------------------------------------------------------
-  // Quick ping for monitoring (unchanged)
+  // Quick ping for monitoring
   // ----------------------------------------------------------------------
   async function quickCheck(): Promise<number> {
     const controller = new AbortController();
@@ -117,7 +117,7 @@ export default function useSpeedTest() {
   }
 
   // ----------------------------------------------------------------------
-  // Auto monitoring (unchanged)
+  // Auto monitoring
   // ----------------------------------------------------------------------
   useEffect(() => {
     if (!autoRun) {
@@ -145,7 +145,7 @@ export default function useSpeedTest() {
   }, [autoRun]);
 
   // ----------------------------------------------------------------------
-  // 1. IMPROVED PING TEST: multiple samples, outlier removal, plain text
+  // 1. IMPROVED PING TEST
   // ----------------------------------------------------------------------
   async function testPing(): Promise<{ ping: number; jitter: number }> {
     const samples: number[] = [];
@@ -153,7 +153,6 @@ export default function useSpeedTest() {
     for (let i = 0; i < PING_SAMPLES; i++) {
       const start = performance.now();
       try {
-        // Use plain text endpoint (no JSON overhead)
         await fetchWithCacheBust(`${BASE_URL}/ping`);
         const latency = performance.now() - start;
         samples.push(latency);
@@ -169,7 +168,6 @@ export default function useSpeedTest() {
       return { ping: 999, jitter: 999 };
     }
 
-    // Remove outliers (trim 20% from both ends)
     const sorted = [...samples].sort((a, b) => a - b);
     const trimStart = Math.floor(sorted.length * 0.2);
     const trimEnd = Math.floor(sorted.length * 0.8);
@@ -177,7 +175,6 @@ export default function useSpeedTest() {
     const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
     const pingValue = +avg.toFixed(2);
 
-    // Jitter = average absolute difference between consecutive samples (within trimmed set)
     let jitterValue = 0;
     if (trimmed.length > 1) {
       const diffs: number[] = [];
@@ -195,7 +192,7 @@ export default function useSpeedTest() {
   }
 
   // ----------------------------------------------------------------------
-  // 2. IMPROVED DOWNLOAD TEST: ignore first 2 seconds, use raw avg
+  // 2. IMPROVED DOWNLOAD TEST
   // ----------------------------------------------------------------------
   async function testDownload(basePing: number) {
     const startTime = performance.now();
@@ -205,7 +202,6 @@ export default function useSpeedTest() {
     let totalBytes = 0;
     const pingDuringLoad: number[] = [];
 
-    // Monitor ping during download (bufferbloat)
     const pingMonitorInterval = setInterval(async () => {
       const start = performance.now();
       try {
@@ -214,7 +210,6 @@ export default function useSpeedTest() {
       } catch {}
     }, 1000);
 
-    // Worker: fetch download stream
     async function worker(workerId: number) {
       try {
         const res = await fetch(`${BASE_URL}/download?worker=${workerId}&t=${Date.now()}`, {
@@ -226,9 +221,6 @@ export default function useSpeedTest() {
         if (!reader) return;
 
         let workerBytes = 0;
-        let lastSampleTime = performance.now();
-        // let lastSampleBytes;
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -236,16 +228,10 @@ export default function useSpeedTest() {
           totalBytes += value.length;
 
           const now = performance.now();
-          // Update download history every second (for live graph)
           const elapsed = (now - startTime) / 1000;
           if (elapsed > 0) {
             const currentMbps = (totalBytes * 8) / (elapsed * 1024 * 1024);
             setDownloadHistory(prev => [...prev.slice(-60), currentMbps]);
-          }
-          // Sample speed every second for potential later use (ignored now)
-          if (now - lastSampleTime >= 1000) {
-            lastSampleTime = now;
-            // lastSampleBytes = workerBytes;
           }
         }
       } catch (err) {}
@@ -257,7 +243,6 @@ export default function useSpeedTest() {
     clearInterval(pingMonitorInterval);
     controller.abort();
 
-    // Bufferbloat calculation
     if (pingDuringLoad.length) {
       const avgLoadPing = pingDuringLoad.reduce((a, b) => a + b, 0) / pingDuringLoad.length;
       const bloat = +(avgLoadPing - basePing).toFixed(2);
@@ -265,10 +250,9 @@ export default function useSpeedTest() {
     }
 
     const actualDuration = Math.min(performance.now() - startTime, DOWNLOAD_DURATION);
-    // 🔥 CRITICAL: Ignore first 2 seconds to avoid ramp‑up distortion
-    const measurementStart = Math.min(actualDuration, 2000); // first 2 seconds are ignored
+    const measurementStart = Math.min(actualDuration, 2000);
     const effectiveDuration = actualDuration - measurementStart;
-    const effectiveBytes = totalBytes * (effectiveDuration / actualDuration); // linear approximation
+    const effectiveBytes = totalBytes * (effectiveDuration / actualDuration);
     const finalSpeed = (effectiveBytes * 8) / ((effectiveDuration / 1000) * 1024 * 1024);
 
     const final = +Math.min(finalSpeed, 10000).toFixed(2);
@@ -277,15 +261,14 @@ export default function useSpeedTest() {
   }
 
   // ----------------------------------------------------------------------
-  // 3. IMPROVED UPLOAD TEST (unchanged logic but clean)
+  // 3. UPLOAD TEST
   // ----------------------------------------------------------------------
   async function testUpload() {
-    const payload = new Uint8Array(256 * 1024); // 256KB chunks
+    const payload = new Uint8Array(256 * 1024);
     let totalBytes = 0;
     const startTime = performance.now();
 
     async function worker(workerId: number) {
-      let localBytes = 0;
       while (performance.now() - startTime < UPLOAD_DURATION) {
         try {
           const response = await fetch(`${BASE_URL}/upload?worker=${workerId}&t=${Date.now()}`, {
@@ -294,8 +277,7 @@ export default function useSpeedTest() {
             cache: 'no-store',
             headers: { 'Cache-Control': 'no-cache' }
           });
-          await response.text(); // ensure completion
-          localBytes += payload.length;
+          await response.text();
           totalBytes += payload.length;
 
           const elapsed = (performance.now() - startTime) / 1000;
@@ -319,15 +301,12 @@ export default function useSpeedTest() {
   }
 
   // ----------------------------------------------------------------------
-  // 4. WARM‑UP: call endpoints before actual test to eliminate cold start
+  // 4. WARM-UP
   // ----------------------------------------------------------------------
   async function warmUp() {
     try {
-      // Warm up ping
       await fetchWithCacheBust(`${BASE_URL}/ping`);
-      // Warm up download (short duration)
       await fetch(`${BASE_URL}/download?duration=${WARMUP_DURATION}`, { cache: 'no-store' });
-      // (Optional) warm up upload with a tiny payload
       await fetch(`${BASE_URL}/upload`, { method: 'POST', body: new Uint8Array(1024), cache: 'no-store' });
     } catch (err) {
       console.warn("Warmup failed, but continuing test", err);
@@ -335,7 +314,7 @@ export default function useSpeedTest() {
   }
 
   // ----------------------------------------------------------------------
-  // Score calculation (unchanged)
+  // Score calculation
   // ----------------------------------------------------------------------
   const calculateAccurateScore = (pingMs: number, downloadMbps: number, uploadMbps: number): number => {
     let score = 0;
@@ -372,14 +351,14 @@ export default function useSpeedTest() {
   };
 
   // ----------------------------------------------------------------------
-  // MAIN TEST RUNNER with warm‑up and improved ping/download
+  // MAIN TEST RUNNER - UPDATED for new storage format
   // ----------------------------------------------------------------------
   async function runTest(
     source: "manual" | "auto" = "manual",
     selection?: { ping: boolean; jitter: boolean; download: boolean; upload: boolean },
-    isp?: string,
+    networkName?: string,
     externalNetworkType?: string,
-    externalIp?: string
+    // externalIp?: string
   ) {
     if (runningRef.current) {
       console.log("Test blocked: Already running");
@@ -400,7 +379,6 @@ export default function useSpeedTest() {
     runningRef.current = true;
     setRunning(true);
 
-    // Reset histories
     setDownloadHistory([]);
     setUploadHistory([]);
     setPingHistory([]);
@@ -410,7 +388,6 @@ export default function useSpeedTest() {
     let p = 0, j = 0, d = 0, u = 0;
 
     try {
-      // 🔥 WARM-UP: ensures server is ready (critical for free tiers)
       await warmUp();
 
       const shouldRunPing = selection === undefined || selection.ping !== false;
@@ -467,7 +444,9 @@ export default function useSpeedTest() {
 
       if (shouldRunPing || shouldRunDownload || shouldRunUpload) {
         const finalNetworkType = externalNetworkType || networkType;
-        const detectedIsp = isp || "Unknown";
+        const finalNetworkName = networkName || "Unknown Network";
+        
+        // Save using new storage format
         saveResult({
           date: new Date().toLocaleString(),
           ping: p,
@@ -475,10 +454,9 @@ export default function useSpeedTest() {
           download: d,
           upload: u,
           score: accurateScore,
-          customName: detectedIsp,
-          isp: detectedIsp,
+          networkName: finalNetworkName,
           networkType: finalNetworkType,
-          ip: externalIp || "unknown"
+          hour: new Date().getHours(),
         });
         saveBestScore(accurateScore);
         saveBestStats(accurateScore, d, u, p);
