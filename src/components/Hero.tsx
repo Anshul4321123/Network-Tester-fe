@@ -1,4 +1,4 @@
-// Hero.tsx - Updated to work with your MetricCard
+// Hero.tsx - MOBILE OPTIMIZED wrapper
 import { useState } from "react";
 import StartTestButton from "./StartTestButton";
 import MetricCard from "./MetricCard";
@@ -65,7 +65,6 @@ export default function Hero({
     }
   };
 
-  // Get descriptions for each metric
   const pingDescription = getMetricDescription("ping", ping);
   const jitterDescription = getMetricDescription("jitter", jitter);
   const downloadDescription = getMetricDescription("download", download);
@@ -77,29 +76,26 @@ export default function Hero({
         style={{
           background: "rgba(255,255,255,0.95)",
           backdropFilter: "blur(10px)",
-          borderRadius: "clamp(20px, 5vw, 28px)",
-          padding: "clamp(16px, 4vw, 24px)",
-          boxShadow: "0 8px 30px rgba(0,0,0,0.08)",
+          borderRadius: "clamp(16px, 5vw, 28px)",
+          padding: "clamp(14px, 4vw, 24px)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
           textAlign: "center",
         }}
       >
-        {/* Score Section */}
         <ScoreSection 
           score={score} 
           isTestActive={isTestActive} 
           onClick={handleScoreClick} 
         />
 
-        {/* Testing Status */}
         <TestingStatus phase={phase} isTestActive={isTestActive} />
 
-        {/* Metrics Grid - Using your MetricCard component */}
         <div
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(2, 1fr)",
-            gap: "clamp(12px, 3vw, 16px)",
-            marginBottom: "20px",
+            gap: "clamp(8px, 3vw, 16px)",
+            marginBottom: "16px",
           }}
         >
           <MetricCard 
@@ -140,11 +136,9 @@ export default function Hero({
           />
         </div>
 
-        {/* Test Type Toggle */}
         <TestTypeToggle testType={testType} onChange={handleTestTypeChange} />
 
-        {/* Start Button */}
-        <div style={{ marginBottom: "16px" }}>
+        <div style={{ marginBottom: "14px" }}>
           <div
             style={{
               display: "inline-block",
@@ -157,14 +151,11 @@ export default function Hero({
           </div>
         </div>
 
-        {/* Live Graph Toggle */}
         <LiveGraphToggle showLiveGraph={showLiveGraph} onToggle={onToggleLiveGraph} />
 
-        {/* Mode Buttons */}
         <ModeButtons mode={mode} running={running} onModeChange={onModeChange} />
       </div>
 
-      {/* Score Explanation Modal */}
       {showScoreExplanation && scoreBreakdown && (
         <ScoreBreakdownModal
           score={score}
@@ -176,7 +167,6 @@ export default function Hero({
         />
       )}
 
-      {/* Metric Info Popup */}
       <MetricInfoPopup 
         metric={selectedMetric}
         onClose={() => setSelectedMetric(null)}

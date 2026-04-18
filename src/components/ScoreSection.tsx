@@ -1,4 +1,4 @@
-// components/ScoreSection.tsx
+// components/ScoreSection.tsx - MOBILE OPTIMIZED
 interface ScoreSectionProps {
   score: number | null;
   isTestActive: boolean;
@@ -16,7 +16,7 @@ export default function ScoreSection({ score, isTestActive, onClick }: ScoreSect
     return (
       <div 
         style={{ 
-          marginBottom: "20px", 
+          marginBottom: "clamp(12px, 4vw, 20px)", 
           cursor: "pointer",
           transition: "transform 0.2s",
         }}
@@ -30,7 +30,7 @@ export default function ScoreSection({ score, isTestActive, onClick }: ScoreSect
       >
         <div
           style={{
-            fontSize: "clamp(36px, 8vw, 48px)",
+            fontSize: "clamp(28px, 8vw, 48px)",
             fontWeight: "bold",
             color: score > 80 ? "#10b981" : score > 50 ? "#f59e0b" : "#ef4444",
           }}
@@ -40,7 +40,7 @@ export default function ScoreSection({ score, isTestActive, onClick }: ScoreSect
         {!isTestActive && (
           <div
             style={{
-              fontSize: "clamp(10px, 2.5vw, 12px)",
+              fontSize: "clamp(9px, 2.5vw, 12px)",
               opacity: 0.6,
               marginTop: "4px",
               color: "#475569",
@@ -54,10 +54,10 @@ export default function ScoreSection({ score, isTestActive, onClick }: ScoreSect
   }
 
   return (
-    <div style={{ marginBottom: "20px" }}>
+    <div style={{ marginBottom: "clamp(12px, 4vw, 20px)" }}>
       <div
         style={{
-          fontSize: "clamp(24px, 6vw, 32px)",
+          fontSize: "clamp(20px, 6vw, 32px)",
           fontWeight: "bold",
           color: "#64748b",
         }}

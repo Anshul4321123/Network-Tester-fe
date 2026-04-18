@@ -1,4 +1,4 @@
-// components/MetricCard.tsx
+// components/MetricCard.tsx - MOBILE OPTIMIZED
 import { useState } from "react";
 
 interface MetricCardProps {
@@ -26,36 +26,36 @@ export default function MetricCard({
     <div
       style={{
         background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
-        padding: "clamp(12px, 3vw, 16px)",
-        borderRadius: "16px",
+        padding: "clamp(10px, 3vw, 16px)",
+        borderRadius: "clamp(12px, 3vw, 16px)",
         textAlign: "center",
         transition: "transform 0.2s, box-shadow 0.2s",
         cursor: clickable ? "pointer" : description ? "help" : "default",
         position: "relative",
-        boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
       }}
       onMouseEnter={(e) => {
         e.currentTarget.style.transform = "translateY(-2px)";
-        e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.2)";
+        e.currentTarget.style.boxShadow = "0 6px 16px rgba(0,0,0,0.2)";
         if (description && !clickable) setShowTooltip(true);
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.transform = "translateY(0)";
-        e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.15)";
+        e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.15)";
         setShowTooltip(false);
       }}
       onClick={onClick}
       title={!clickable ? description : undefined}
     >
-      <div style={{ fontSize: "clamp(20px, 5vw, 24px)", marginBottom: "6px" }}>
+      <div style={{ fontSize: "clamp(18px, 5vw, 24px)", marginBottom: "4px" }}>
         {icon}
       </div>
       <div
         style={{
-          fontSize: "clamp(10px, 2.5vw, 11px)",
+          fontSize: "clamp(9px, 2.5vw, 11px)",
           color: "#94a3b8",
-          marginBottom: "6px",
-          letterSpacing: "0.5px",
+          marginBottom: "4px",
+          letterSpacing: "0.3px",
         }}
       >
         {label}
@@ -64,10 +64,10 @@ export default function MetricCard({
       {/* Value or Loader */}
       <div
         style={{
-          fontSize: "clamp(16px, 4vw, 20px)",
+          fontSize: "clamp(14px, 4vw, 20px)",
           fontWeight: "bold",
           color: "#f1f5f9",
-          minHeight: "45px",
+          minHeight: "clamp(32px, 8vw, 45px)",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -76,8 +76,8 @@ export default function MetricCard({
         {isLoading ? (
           <div
             style={{
-              width: "28px",
-              height: "28px",
+              width: "clamp(20px, 5vw, 28px)",
+              height: "clamp(20px, 5vw, 28px)",
               border: "2px solid #475569",
               borderTopColor: "#10b981",
               borderRadius: "50%",
@@ -92,17 +92,17 @@ export default function MetricCard({
       {description && !isLoading && !clickable && (
         <div
           style={{
-            fontSize: "9px",
+            fontSize: "8px",
             color: "#94a3b8",
-            marginTop: "6px",
-            lineHeight: "1.3",
+            marginTop: "4px",
+            lineHeight: "1.2",
           }}
         >
           {description}
         </div>
       )}
       
-      {/* Tooltip for clickable items */}
+      {/* Tooltip for clickable items - responsive width */}
       {showTooltip && clickable && description && (
         <div
           style={{
@@ -117,6 +117,9 @@ export default function MetricCard({
             padding: "6px 10px",
             borderRadius: "8px",
             whiteSpace: "nowrap",
+            maxWidth: "90vw",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
             zIndex: 100,
             boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
             pointerEvents: "none",

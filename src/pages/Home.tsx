@@ -1,5 +1,5 @@
-// Home.tsx - With test blocking and improved PingScanner button
-import { useEffect, useState } from "react";
+// Home.tsx - Share button moved to dedicated section
+import { useEffect, useState} from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
 import Insights from "../components/Insights";
@@ -16,7 +16,7 @@ import ServerWarming from "../components/ServerWarming";
 import TrustBanner from "../components/TrustBanner";
 import AllTimeBest from "../components/AllTimeBest";
 import FooterMessage from "../components/FooterMessage";
-import ShareButton from "../components/ShareButton";
+// import ShareButton from "../components/ShareButton";
 import { useServerWarmup } from "../hooks/useServerWarmup";
 import { 
   getHistory, 
@@ -34,14 +34,268 @@ import {
   type Achievements 
 } from "../utils/storage";
 import PingScanner from "../components/PingScanner";
+import SmartRedirectPopup from "../components/SmartRedirectPopup";
 
-interface RecordBreak {
-  type: string;
-  oldValue: number;
-  newValue: number;
+// ============================================
+// ENHANCED COLLAPSIBLE SECTION COMPONENT
+// ============================================
+
+interface SectionConfig {
+  icon: string;
+  title: string;
+  description: string;
+  hoverInfo: string[];
+  features?: string[];
+  highlight?: boolean;
 }
 
-// Predefined network options
+const SECTIONS: Record<string, SectionConfig> = {
+  network: {
+    icon: "🌐",
+    title: "Network Details",
+    description: "Manage your networks and connection settings",
+    hoverInfo: ["🏷️ Name your networks", "📡 Detect connection type", "🌍 Select test server"],
+    features: ["Custom network names", "Auto-detection", "Server selector"]
+  },
+  tools: {
+    icon: "🛠️",
+    title: "Tools",
+    description: "Extra tools to optimize your connection",
+    hoverInfo: ["📡 Live ping scanner", "📤 Find best signal spot", "📍 Signal strength meter"],
+    features: ["Ping Scanner", "Signal Finder", "Real-time monitoring"],
+    highlight: true
+  },
+  insights: {
+    icon: "🧠",
+    title: "Insights & Analysis",
+    description: "Smart analysis of your connection quality",
+    hoverInfo: ["📊 Performance trends", "🎮 Gaming analysis", "📺 Streaming insights"],
+    features: ["Trend analysis", "Mode-specific tips", "Health alerts"]
+  },
+  advanced: {
+    icon: "⚙️",
+    title: "Advanced",
+    description: "Detailed metrics and monitoring",
+    hoverInfo: ["📦 Bufferbloat measurement", "🔔 Auto monitoring", "📜 Test history"],
+    features: ["Bufferbloat", "Auto tests", "History export"]
+  }
+};
+
+function EnhancedCollapsibleSection({ 
+  sectionKey, 
+  children, 
+  defaultOpen = false,
+  onToggle,
+  isHighlighted = false
+}: { 
+  sectionKey: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  onToggle?: (isOpen: boolean) => void;
+  isHighlighted?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const section = SECTIONS[sectionKey];
+  
+  const handleToggle = () => {
+    const newState = !isOpen;
+    setIsOpen(newState);
+    onToggle?.(newState);
+  };
+  
+  return (
+    <div 
+      style={{
+        background: isHighlighted 
+          ? "linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(139,92,246,0.08) 100%)"
+          : "rgba(255,255,255,0.7)",
+        borderRadius: "16px",
+        padding: "12px",
+        border: isHighlighted 
+          ? "1px solid rgba(59,130,246,0.3)"
+          : "1px solid rgba(0,0,0,0.05)",
+        transition: "all 0.2s ease",
+        position: "relative",
+      }}
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
+    >
+      {/* Hover Tooltip */}
+      {showTooltip && (
+        <div style={{
+          position: "absolute",
+          bottom: "100%",
+          left: "0",
+          marginBottom: "8px",
+          background: "#1e293b",
+          borderRadius: "12px",
+          padding: "10px 14px",
+          minWidth: "200px",
+          zIndex: 200,
+          boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          pointerEvents: "none",
+        }}>
+          <div style={{ fontSize: "11px", fontWeight: "600", color: "#fff", marginBottom: "6px" }}>
+            {section.icon} {section.title}
+          </div>
+          <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "8px" }}>
+            {section.description}
+          </div>
+          <div style={{ fontSize: "9px", color: "#64748b", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "6px" }}>
+            {section.hoverInfo.map((info, i) => (
+              <div key={i} style={{ marginBottom: "2px" }}>{info}</div>
+            ))}
+          </div>
+        </div>
+      )}
+      
+      <button
+        onClick={handleToggle}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          padding: "4px 0",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", flex: 1 }}>
+          <span style={{ fontSize: "18px" }}>{section.icon}</span>
+          <div style={{ flex: 1, textAlign: "left" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "14px", fontWeight: "600", color: "#1e293b" }}>{section.title}</span>
+              {isHighlighted && (
+                <span style={{ 
+                  fontSize: "9px", 
+                  background: "#3b82f6", 
+                  color: "#fff", 
+                  padding: "2px 8px", 
+                  borderRadius: "20px",
+                  fontWeight: "500"
+                }}>
+                  NEW
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>
+              {section.description}
+            </div>
+          </div>
+        </div>
+        <span style={{ fontSize: "12px", color: "#94a3b8" }}>{isOpen ? "▼" : "▶"}</span>
+      </button>
+      
+      {/* Feature Preview (when closed) */}
+      {!isOpen && (
+        <div style={{ 
+          display: "flex", 
+          gap: "6px", 
+          marginTop: "8px", 
+          paddingTop: "8px", 
+          borderTop: "1px solid rgba(0,0,0,0.05)",
+          flexWrap: "wrap"
+        }}>
+          {section.features?.slice(0, 3).map((feature, i) => (
+            <span key={i} style={{ 
+              fontSize: "9px", 
+              background: "rgba(0,0,0,0.04)", 
+              padding: "2px 8px", 
+              borderRadius: "12px",
+              color: "#64748b"
+            }}>
+              {feature}
+            </span>
+          ))}
+          {section.features && section.features.length > 3 && (
+            <span style={{ fontSize: "9px", color: "#94a3b8" }}>+{section.features.length - 3} more</span>
+          )}
+        </div>
+      )}
+      
+      {isOpen && <div style={{ marginTop: "12px" }}>{children}</div>}
+    </div>
+  );
+}
+
+// Quick Stats Bar Component
+function QuickStatsBar({ bestStats, formatSpeed }: { bestStats: any; formatSpeed: (v: number) => string }) {
+  if (!bestStats) return null;
+  
+  return (
+    <div style={{
+      display: "flex",
+      justifyContent: "space-around",
+      padding: "8px",
+      background: "rgba(16,185,129,0.08)",
+      borderRadius: "12px",
+      marginBottom: "12px",
+    }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "10px", color: "#64748b" }}>🏆 Best Score</div>
+        <div style={{ fontSize: "16px", fontWeight: "bold", color: "#10b981" }}>{bestStats.bestScore}/100</div>
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "10px", color: "#64748b" }}>⚡ Best Download</div>
+        <div style={{ fontSize: "14px", fontWeight: "bold", color: "#3b82f6" }}>{formatSpeed(bestStats.bestDownload)}</div>
+      </div>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: "10px", color: "#64748b" }}>📡 Best Ping</div>
+        <div style={{ fontSize: "14px", fontWeight: "bold", color: "#10b981" }}>{bestStats.bestPing.toFixed(0)}ms</div>
+      </div>
+    </div>
+  );
+}
+
+// Share Card Component (Dedicated)
+function ShareResultCard({ score, onClick, isVisible }: { score: number | null; onClick: () => void; isVisible: boolean }) {
+  if (!isVisible || score === null) return null;
+  
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
+      borderRadius: "16px",
+      padding: "12px 16px",
+      border: "1px solid #e2e8f0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <span style={{ fontSize: "24px" }}>📤</span>
+        <div>
+          <div style={{ fontSize: "11px", fontWeight: "600", color: "#1e293b" }}>Share Your Results</div>
+          <div style={{ fontSize: "9px", color: "#64748b" }}>Show off your speed!</div>
+        </div>
+      </div>
+      <button
+        onClick={onClick}
+        style={{
+          padding: "8px 20px",
+          background: "linear-gradient(135deg, #10b981 0%, #059669 100%)",
+          border: "none",
+          borderRadius: "40px",
+          color: "#fff",
+          cursor: "pointer",
+          fontSize: "12px",
+          fontWeight: "500",
+          transition: "transform 0.2s",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.02)" }}
+        onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)" }}
+      >
+        Share Now →
+      </button>
+    </div>
+  );
+}
+
+// Network Selector Component
 const DEFAULT_NETWORKS = [
   "Home Network",
   "Office Network",
@@ -50,6 +304,127 @@ const DEFAULT_NETWORKS = [
   "Gaming Network",
   "Streaming Network",
 ];
+
+function NetworkSelector({ networkName, setNetworkName, savedNetworks, setSavedNetworks }: any) {
+  const [showAddNetwork, setShowAddNetwork] = useState(false);
+  const [newNetworkName, setNewNetworkName] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const handleAddNetwork = () => {
+    if (newNetworkName.trim() && !savedNetworks.includes(newNetworkName.trim())) {
+      const updatedNetworks = [...savedNetworks, newNetworkName.trim()];
+      setSavedNetworks(updatedNetworks);
+      setNetworkName(newNetworkName.trim());
+      setNewNetworkName("");
+      setShowAddNetwork(false);
+    }
+  };
+
+  const handleDeleteNetwork = (networkToDelete: string) => {
+    if (savedNetworks.length <= 1) {
+      alert("You need at least one network name.");
+      return;
+    }
+    const updatedNetworks = savedNetworks.filter((n:String) => n !== networkToDelete);
+    setSavedNetworks(updatedNetworks);
+    if (networkName === networkToDelete && updatedNetworks.length > 0) {
+      setNetworkName(updatedNetworks[0]);
+    }
+    setShowDeleteConfirm(null);
+    setIsDropdownOpen(false);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.network-dropdown')) setIsDropdownOpen(false);
+    };
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="network-dropdown" style={{ position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ fontSize: "14px" }}>🏷️</span>
+          <span style={{ fontSize: "11px", color: "#64748b" }}>Network</span>
+        </div>
+        <button onClick={() => setShowAddNetwork(true)} style={{ fontSize: "10px", color: "#10b981", background: "none", border: "none", cursor: "pointer" }}>
+          + Add
+        </button>
+      </div>
+      
+      <div
+        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        style={{
+          padding: "8px 12px",
+          background: "#fff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "10px",
+          fontSize: "13px",
+          cursor: "pointer",
+          display: "flex",
+          justifyContent: "space-between",
+        }}
+      >
+        <span>{networkName}</span>
+        <span>{isDropdownOpen ? "▲" : "▼"}</span>
+      </div>
+
+      {isDropdownOpen && (
+        <div style={{
+          position: "absolute",
+          top: "100%",
+          left: 0,
+          right: 0,
+          background: "#fff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "10px",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+          zIndex: 100,
+          maxHeight: "200px",
+          overflowY: "auto",
+        }}>
+          {savedNetworks.map((net: string) => (
+            <div key={net} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
+              <span onClick={() => { setNetworkName(net); setIsDropdownOpen(false); }} style={{ flex: 1, cursor: "pointer" }}>{net}</span>
+              {savedNetworks.length > 1 && (
+                <button onClick={() => setShowDeleteConfirm(net)} style={{ background: "none", border: "none", cursor: "pointer", color: "#94a3b8" }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAddNetwork && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAddNetwork(false)}>
+          <div style={{ background: "white", borderRadius: "16px", padding: "20px", width: "280px" }} onClick={e => e.stopPropagation()}>
+            <h4 style={{ marginBottom: "12px" }}>Add Network</h4>
+            <input type="text" value={newNetworkName} onChange={e => setNewNetworkName(e.target.value)} placeholder="Network name" style={{ width: "100%", padding: "8px", marginBottom: "12px", border: "1px solid #e2e8f0", borderRadius: "8px" }} autoFocus />
+            <button onClick={handleAddNetwork} style={{ width: "100%", padding: "8px", background: "#10b981", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer" }}>Add</button>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowDeleteConfirm(null)}>
+          <div style={{ background: "white", borderRadius: "16px", padding: "20px", width: "260px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+            <p>Delete "{showDeleteConfirm}"?</p>
+            <div style={{ display: "flex", gap: "10px", marginTop: "16px" }}>
+              <button onClick={() => handleDeleteNetwork(showDeleteConfirm)} style={{ flex: 1, padding: "8px", background: "#ef4444", color: "#fff", border: "none", borderRadius: "8px", cursor: "pointer" }}>Delete</button>
+              <button onClick={() => setShowDeleteConfirm(null)} style={{ flex: 1, padding: "8px", background: "#e2e8f0", border: "none", borderRadius: "8px", cursor: "pointer" }}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// MAIN HOME COMPONENT
+// ============================================
 
 export default function Home() {
   const [history, setHistory] = useState<SpeedTestRecord[]>(getHistory());
@@ -62,185 +437,143 @@ export default function Home() {
   const [testSelection, setTestSelection] = useState(() => loadTestSelection());
   const [testCompleted, setTestCompleted] = useState(0);
   const [showShareCard, setShowShareCard] = useState(false);
-  const [selectedServer, setSelectedServer] = useState(() => {
-    return localStorage.getItem("selected_server") || "auto";
-  });
-  
-  // Network name management
-  const [networkName, setNetworkName] = useState(() => {
-    return localStorage.getItem("network_name") || "Home Network";
-  });
+  const [selectedServer, setSelectedServer] = useState(() => localStorage.getItem("selected_server") || "auto");
+  const [networkName, setNetworkName] = useState(() => localStorage.getItem("network_name") || "Home Network");
   const [savedNetworks, setSavedNetworks] = useState<string[]>(() => {
     const saved = localStorage.getItem("saved_networks");
-    if (saved) {
-      return JSON.parse(saved);
-    }
-    return [...DEFAULT_NETWORKS];
+    return saved ? JSON.parse(saved) : [...DEFAULT_NETWORKS];
   });
-  const [showAddNetwork, setShowAddNetwork] = useState(false);
-  const [newNetworkName, setNewNetworkName] = useState("");
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  
   const [celebration, setCelebration] = useState<any>(null);
   const [comparisonPopup, setComparisonPopup] = useState<any>(null);
   const [lastProcessedTestId, setLastProcessedTestId] = useState<string>("");
   const [showPingScanner, setShowPingScanner] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  
+  // Smart Popup State
+  const [smartPopup, setSmartPopup] = useState<{
+    isOpen: boolean;
+    type: "high-latency" | "history" | "feature-highlight" | "achievement";
+    data?: any;
+  }>({ isOpen: false, type: "high-latency" });
+  
+  const [hasSeenFeaturePopup, setHasSeenFeaturePopup] = useState(() => {
+    return localStorage.getItem("has_seen_ping_feature") === "true";
+  });
 
   const {
-    ping,
-    download,
-    upload,
-    jitter,
-    phase,
-    report,
-    runTest,
-    downloadHistory,
-    uploadHistory,
-    pingHistory,
-    jitterHistory,
-    score,
-    insights,
-    mode,
-    setMode,
-    modeResult,
-    bufferbloat,
-    networkType,
-    running,
-    autoRun,
-    setAutoRun,
-    monitorPing,
-    timePattern,
+    ping, download, upload, jitter, phase, report, runTest,
+    downloadHistory, uploadHistory, pingHistory, jitterHistory,
+    score, insights, mode, setMode, modeResult, bufferbloat,
+    networkType, running, autoRun, setAutoRun, monitorPing, timePattern,
   } = useSpeedTest();
 
   const serverWarmedUp = useServerWarmup();
 
-  // Save network name to localStorage
+  // Smart Popup Triggers
   useEffect(() => {
-    if (networkName) {
-      localStorage.setItem("network_name", networkName);
+    if (phase === "complete" && ping && ping > 100 && !smartPopup.isOpen) {
+      const lastShown = localStorage.getItem("last_latency_popup");
+      const now = Date.now();
+      if (!lastShown || now - parseInt(lastShown) > 3600000) {
+        setTimeout(() => {
+          setSmartPopup({ isOpen: true, type: "high-latency", data: { ping } });
+          localStorage.setItem("last_latency_popup", now.toString());
+        }, 1000);
+      }
     }
-  }, [networkName]);
+  }, [phase, ping]);
 
-  // Save networks list to localStorage
+  useEffect(() => {
+    const testCount = history.length;
+    const hasSeenHistoryPopup = localStorage.getItem("has_seen_history_popup");
+    if (testCount >= 3 && !hasSeenHistoryPopup && !smartPopup.isOpen && phase === "complete") {
+      setTimeout(() => {
+        setSmartPopup({ isOpen: true, type: "history", data: { testCount } });
+        localStorage.setItem("has_seen_history_popup", "true");
+      }, 2000);
+    }
+  }, [history.length, phase]);
+
+  useEffect(() => {
+    if (!hasSeenFeaturePopup && phase === "complete" && score !== null && !smartPopup.isOpen) {
+      setTimeout(() => {
+        setSmartPopup({ isOpen: true, type: "feature-highlight", data: { featureName: "Live Ping Scanner" } });
+        setHasSeenFeaturePopup(true);
+        localStorage.setItem("has_seen_ping_feature", "true");
+      }, 3000);
+    }
+  }, [phase, score]);
+
+  const handleSmartPopupAction = (action: string) => {
+    if (action === "open-ping-scanner") {
+      setShowPingScanner(true);
+      setOpenSections(prev => ({ ...prev, tools: true }));
+      setTimeout(() => {
+        const pingScannerElement = document.getElementById("ping-scanner-card");
+        if (pingScannerElement) {
+          pingScannerElement.style.boxShadow = "0 0 0 3px #3b82f6";
+          pingScannerElement.style.transition = "box-shadow 0.3s ease";
+          setTimeout(() => { pingScannerElement.style.boxShadow = ""; }, 3000);
+        }
+      }, 300);
+    } else if (action === "view-history") {
+      window.location.href = "/history";
+    }
+  };
+
+  // Save to localStorage
+  useEffect(() => {
+    if (networkName) localStorage.setItem("network_name", networkName);
+  }, [networkName]);
   useEffect(() => {
     localStorage.setItem("saved_networks", JSON.stringify(savedNetworks));
   }, [savedNetworks]);
-
-  // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (!target.closest('.network-dropdown')) {
-        setIsDropdownOpen(false);
-      }
-    };
-    document.addEventListener('click', handleClickOutside);
-    return () => document.removeEventListener('click', handleClickOutside);
-  }, []);
-
-  const handleAddNetwork = () => {
-    if (newNetworkName.trim() && !savedNetworks.includes(newNetworkName.trim())) {
-      const updatedNetworks = [...savedNetworks, newNetworkName.trim()];
-      setSavedNetworks(updatedNetworks);
-      setNetworkName(newNetworkName.trim());
-      setNewNetworkName("");
-      setShowAddNetwork(false);
-    } else if (newNetworkName.trim() && savedNetworks.includes(newNetworkName.trim())) {
-      alert("This network name already exists!");
-    }
-  };
-
-  const handleDeleteNetwork = (networkToDelete: string) => {
-    if (savedNetworks.length <= 1) {
-      alert("You need at least one network name. Add a new one first.");
-      setShowDeleteConfirm(null);
-      return;
-    }
-    
-    const updatedNetworks = savedNetworks.filter(n => n !== networkToDelete);
-    setSavedNetworks(updatedNetworks);
-    
-    if (networkName === networkToDelete && updatedNetworks.length > 0) {
-      setNetworkName(updatedNetworks[0]);
-    }
-    setShowDeleteConfirm(null);
-    setIsDropdownOpen(false);
-  };
-
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      setIsTabVisible(document.visibilityState === "visible");
-    };
+    const handleVisibilityChange = () => setIsTabVisible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, []);
-
   useEffect(() => {
     if (showLiveGraph && (running || phase === "download" || phase === "upload" || phase === "ping")) {
       setShowGraphPopup(true);
     }
   }, [running, phase, showLiveGraph]);
-
   useEffect(() => {
-    if (phase === "complete") {
-      setTestCompleted(prev => prev + 1);
-    }
+    if (phase === "complete") setTestCompleted(prev => prev + 1);
   }, [phase]);
-
   useEffect(() => {
     saveTestSelection(testSelection);
   }, [testSelection]);
 
-  const handleComparisonClose = () => {
-    setComparisonPopup(null);
-  };
-
+  const handleComparisonClose = () => setComparisonPopup(null);
   const handleServerChange = (serverId: string, baseUrl: string) => {
     setSelectedServer(serverId);
     localStorage.setItem("selected_server", serverId);
     localStorage.setItem("selected_server_url", baseUrl);
   };
-
-  const formatSpeed = (value: number) => {
-    if (value > 1000) return `${(value / 1000).toFixed(1)} Gbps`;
-    return `${value.toFixed(1)} Mbps`;
-  };
+  const formatSpeed = (value: number) => value > 1000 ? `${(value / 1000).toFixed(1)} Gbps` : `${value.toFixed(1)} Mbps`;
 
   const handleRunTest = async () => {
-    console.log("🚀 Starting speed test...");
-    
     const finalNetworkType = networkType || "unknown";
     const currentNetworkName = networkName || "Home Network";
-    
-    console.log("📡 TEST USING Network Name:", currentNetworkName);
-    console.log("🌐 TEST USING Network Type:", finalNetworkType);
-    
     localStorage.setItem("test_network_name", currentNetworkName);
     localStorage.setItem("test_start_time", Date.now().toString());
-    
     runTest("manual", testSelection, currentNetworkName, finalNetworkType);
   };
 
-  const getBackgroundStyle = () => {
-    if (running) {
-      return {
-        background: "linear-gradient(135deg, #e0f2fe 0%, #fae8ff 50%, #dbeafe 100%)",
-        transition: "background 0.5s ease",
-        minHeight: "100vh",
-      };
-    }
-    return {
-      background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #eef2ff 100%)",
-      transition: "background 0.5s ease",
-      minHeight: "100vh",
-    };
+  const getBackgroundStyle = () => running ? {
+    background: "linear-gradient(135deg, #e0f2fe 0%, #fae8ff 50%, #dbeafe 100%)",
+    transition: "background 0.5s ease",
+    minHeight: "100vh",
+  } : {
+    background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 50%, #eef2ff 100%)",
+    transition: "background 0.5s ease",
+    minHeight: "100vh",
   };
 
-  // Save test result and show popups
+  // Save test result
   useEffect(() => {
     if (phase !== "complete" || score === null || download === null || upload === null || ping === null) return;
-    
     const testId = `${score}-${download}-${upload}-${ping}-${Date.now()}`;
     if (lastProcessedTestId === testId) return;
     if (running) {
@@ -254,33 +587,23 @@ export default function Home() {
     const testNetworkName = localStorage.getItem("test_network_name");
     const finalNetworkName = testNetworkName || networkName || "Home Network";
     const finalNetworkType = networkType || "unknown";
-
     localStorage.removeItem("test_network_name");
     localStorage.removeItem("test_start_time");
     
     const testResult: SpeedTestRecord = {
       date: new Date().toLocaleString(),
-      ping: ping,
-      jitter: jitter || 0,
-      download: download,
-      upload: upload,
-      score: score,
-      networkName: finalNetworkName, 
-      networkType: finalNetworkType,
-      hour: new Date().getHours(),
+      ping, jitter: jitter || 0, download, upload, score,
+      networkName: finalNetworkName, networkType: finalNetworkType, hour: new Date().getHours(),
     };
-    
     saveResult(testResult);
     saveBestScore(score);
     saveBestStats(score, download, upload, ping);
     
     const historyList = getHistory();
     let comparisonData = null;
-    
     if (historyList.length >= 2) {
       const previousTest = historyList[1];
       const currentTest = historyList[0];
-      
       const improvements = [
         { type: "download", oldValue: previousTest.download, newValue: currentTest.download, improved: currentTest.download > previousTest.download },
         { type: "upload", oldValue: previousTest.upload, newValue: currentTest.upload, improved: currentTest.upload > previousTest.upload },
@@ -291,23 +614,10 @@ export default function Home() {
     }
     
     const newAchievements: { type: string; value: number }[] = [];
-    
-    if (!currentAchievements.hasRunPing && ping > 0) {
-      newAchievements.push({ type: "ping", value: ping });
-      updateAchievement("ping");
-    }
-    if (!currentAchievements.hasRunJitter && jitter !== null && jitter >= 0) {
-      newAchievements.push({ type: "jitter", value: jitter });
-      updateAchievement("jitter");
-    }
-    if (!currentAchievements.hasRunDownload && download > 0) {
-      newAchievements.push({ type: "download", value: download });
-      updateAchievement("download");
-    }
-    if (!currentAchievements.hasRunUpload && upload > 0) {
-      newAchievements.push({ type: "upload", value: upload });
-      updateAchievement("upload");
-    }
+    if (!currentAchievements.hasRunPing && ping > 0) { newAchievements.push({ type: "ping", value: ping }); updateAchievement("ping"); }
+    if (!currentAchievements.hasRunJitter && jitter !== null && jitter >= 0) { newAchievements.push({ type: "jitter", value: jitter }); updateAchievement("jitter"); }
+    if (!currentAchievements.hasRunDownload && download > 0) { newAchievements.push({ type: "download", value: download }); updateAchievement("download"); }
+    if (!currentAchievements.hasRunUpload && upload > 0) { newAchievements.push({ type: "upload", value: upload }); updateAchievement("upload"); }
     
     setBestScore(getBestScore());
     setBestStats(getBestStats());
@@ -315,37 +625,20 @@ export default function Home() {
     setAchievements(getAchievements());
     
     if (newAchievements.length > 0) {
-      const achievementRecords: RecordBreak[] = newAchievements.map(a => ({
-        type: a.type === "jitter" ? "ping" : a.type,
-        oldValue: a.value,
-        newValue: a.value,
-      }));
-      
-      setCelebration({
-        show: true,
-        records: achievementRecords,
-        isFirstTime: true,
-        firstTimeType: newAchievements[0]?.type,
-      });
+      const achievementRecords = newAchievements.map(a => ({ type: a.type === "jitter" ? "ping" : a.type, oldValue: a.value, newValue: a.value }));
+      setCelebration({ show: true, records: achievementRecords, isFirstTime: true, firstTimeType: newAchievements[0]?.type });
       setLastProcessedTestId(testId);
-    } 
-    else if (comparisonData && historyList.length >= 2) {
-      setComparisonPopup({
-        show: true,
-        improvements: comparisonData.improvements
-      });
+    } else if (comparisonData && historyList.length >= 2) {
+      setComparisonPopup({ show: true, improvements: comparisonData.improvements });
       setLastProcessedTestId(testId);
     }
-    
   }, [phase, score, download, upload, ping, jitter, networkType, running]);
 
   // History sync
   useEffect(() => {
     const interval = setInterval(() => {
       const newHistory = getHistory();
-      if (JSON.stringify(newHistory) !== JSON.stringify(history)) {
-        setHistory(newHistory);
-      }
+      if (JSON.stringify(newHistory) !== JSON.stringify(history)) setHistory(newHistory);
       const newBestScore = getBestScore();
       if (newBestScore !== bestScore) setBestScore(newBestScore);
       const newBestStats = getBestStats();
@@ -357,293 +650,23 @@ export default function Home() {
   }, [history, bestScore, bestStats, achievements]);
 
   const isTestActive = running || (phase !== "idle" && phase !== "complete");
-
-  if (!serverWarmedUp) {
-    return <ServerWarming onComplete={() => {}} />;
-  }
-
-  // Check if main test is running
   const isMainTestRunning = running || (phase !== "idle" && phase !== "complete");
+
+  if (!serverWarmedUp) return <ServerWarming onComplete={() => {}} />;
+
+  const showMetrics = score !== null && phase === "complete";
+  const showSmartInsight = !isTestActive && score !== null;
+  const showHealthAlert = timePattern && !isTestActive;
+  const showNetworkInfo = !isTestActive;
 
   return (
     <div style={getBackgroundStyle()}>
-      <div
-        style={{
-          maxWidth: "600px",
-          margin: "0 auto",
-          padding: "clamp(12px, 4vw, 24px)",
-          fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
-          display: "flex",
-          flexDirection: "column",
-          gap: "12px",
-        }}
-      >
+      <div style={{ maxWidth: "600px", margin: "0 auto", padding: "clamp(12px, 4vw, 24px)", display: "flex", flexDirection: "column", gap: "12px" }}>
+        
+        {/* ========== ABOVE THE FOLD ========== */}
+        
         <TrustBanner />
-
-        {/* Network Name Dropdown Selector */}
-        <div className="network-dropdown" style={{
-          background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
-          borderRadius: "12px",
-          padding: "12px 14px",
-          border: "1px solid #e2e8f0",
-          position: "relative",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
-            <span style={{ fontSize: "16px" }}>🏷️</span>
-            <div style={{ fontSize: "10px", color: "#64748b", flex: 1 }}>Network Name</div>
-            <button
-              onClick={() => setShowAddNetwork(true)}
-              style={{
-                padding: "4px 8px",
-                background: "#10b981",
-                border: "none",
-                borderRadius: "6px",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "10px",
-                display: "flex",
-                alignItems: "center",
-                gap: "4px",
-              }}
-            >
-              + Add New
-            </button>
-          </div>
-
-          <div
-            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              background: "#fff",
-              border: "1px solid #cbd5e1",
-              borderRadius: "10px",
-              fontSize: "13px",
-              fontWeight: "500",
-              color: "#1e293b",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <span>{networkName}</span>
-            <span style={{ fontSize: "12px", color: "#94a3b8" }}>{isDropdownOpen ? "▲" : "▼"}</span>
-          </div>
-
-          {isDropdownOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: "calc(100% - 8px)",
-                left: "14px",
-                right: "14px",
-                background: "#fff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "10px",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
-                zIndex: 100,
-                maxHeight: "250px",
-                overflowY: "auto",
-              }}
-            >
-              {savedNetworks.map((net) => (
-                <div
-                  key={net}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "10px 12px",
-                    borderBottom: "1px solid #f1f5f9",
-                    cursor: "pointer",
-                    transition: "background 0.2s",
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
-                >
-                  <span
-                    onClick={() => {
-                      setNetworkName(net);
-                      setIsDropdownOpen(false);
-                    }}
-                    style={{ flex: 1, fontSize: "13px", color: "#1e293b" }}
-                  >
-                    {net}
-                  </span>
-                  {savedNetworks.length > 1 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setShowDeleteConfirm(net);
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        color: "#94a3b8",
-                        padding: "4px 8px",
-                        borderRadius: "4px",
-                        transition: "all 0.2s",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = "#ef4444";
-                        e.currentTarget.style.background = "#fef2f2";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = "#94a3b8";
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Add Network Modal */}
-        {showAddNetwork && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0,0,0,0.5)",
-              backdropFilter: "blur(4px)",
-              zIndex: 1000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={() => setShowAddNetwork(false)}
-          >
-            <div
-              style={{
-                background: "white",
-                borderRadius: "20px",
-                padding: "24px",
-                maxWidth: "350px",
-                width: "90%",
-                textAlign: "center",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ fontSize: "40px", marginBottom: "12px" }}>➕</div>
-              <h3 style={{ marginBottom: "8px", fontSize: "18px" }}>Add Network Name</h3>
-              <p style={{ color: "#64748b", marginBottom: "16px", fontSize: "12px" }}>
-                Enter a name for this network (e.g., Home WiFi, Office, Cafe)
-              </p>
-              <input
-                type="text"
-                value={newNetworkName}
-                onChange={(e) => setNewNetworkName(e.target.value)}
-                placeholder="e.g., Home WiFi"
-                style={{
-                  width: "100%",
-                  padding: "10px",
-                  border: "1px solid #cbd5e1",
-                  borderRadius: "10px",
-                  fontSize: "14px",
-                  marginBottom: "16px",
-                  outline: "none",
-                }}
-                autoFocus
-              />
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button
-                  onClick={handleAddNetwork}
-                  style={{ flex: 1, padding: "10px", background: "#10b981", border: "none", borderRadius: "10px", color: "#fff", cursor: "pointer", fontWeight: "500" }}
-                >
-                  Add
-                </button>
-                <button
-                  onClick={() => setShowAddNetwork(false)}
-                  style={{ flex: 1, padding: "10px", background: "#f1f5f9", border: "none", borderRadius: "10px", color: "#64748b", cursor: "pointer", fontWeight: "500" }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Delete Confirmation Modal */}
-        {showDeleteConfirm && (
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: "rgba(0,0,0,0.5)",
-              backdropFilter: "blur(4px)",
-              zIndex: 1000,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-            onClick={() => setShowDeleteConfirm(null)}
-          >
-            <div
-              style={{
-                background: "white",
-                borderRadius: "20px",
-                padding: "24px",
-                maxWidth: "350px",
-                width: "90%",
-                textAlign: "center",
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{ fontSize: "40px", marginBottom: "12px" }}>⚠️</div>
-              <h3 style={{ marginBottom: "8px", fontSize: "18px" }}>Delete Network?</h3>
-              <p style={{ color: "#64748b", marginBottom: "16px", fontSize: "12px" }}>
-                Are you sure you want to delete "{showDeleteConfirm}"?
-              </p>
-              <div style={{ display: "flex", gap: "12px" }}>
-                <button
-                  onClick={() => handleDeleteNetwork(showDeleteConfirm)}
-                  style={{ flex: 1, padding: "10px", background: "#ef4444", border: "none", borderRadius: "10px", color: "#fff", cursor: "pointer", fontWeight: "500" }}
-                >
-                  Yes, Delete
-                </button>
-                <button
-                  onClick={() => setShowDeleteConfirm(null)}
-                  style={{ flex: 1, padding: "10px", background: "#f1f5f9", border: "none", borderRadius: "10px", color: "#64748b", cursor: "pointer", fontWeight: "500" }}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <AllTimeBest bestStats={bestStats} formatSpeed={formatSpeed} />
-
-        <NetworkInfo 
-          triggerRefresh={testCompleted} 
-          onNetworkDetected={(type) => console.log("Network type:", type)}
-          testPing={ping}
-          testJitter={jitter}
-          testDownload={download}
-          testUpload={upload}
-        />
-
-        {timePattern && <HealthAlert pattern={timePattern} />}
-
-        {!isTestActive && score !== null && (
-          <SmartInsight 
-             metrics={{ ping, download, upload, jitter, bufferbloat, networkType, score, bestDownload: bestStats?.bestDownload || 0  }} 
-          />
-        )}
-
+        
         <Hero
           score={score}
           ping={ping}
@@ -662,133 +685,185 @@ export default function Home() {
           onToggleLiveGraph={() => setShowLiveGraph(!showLiveGraph)}
         />
 
-        {/* Improved Ping Scanner Button - Now blocks when main test is running */}
-        <button
-          onClick={() => {
-            if (!isMainTestRunning) {
-              setShowPingScanner(true);
-            }
-          }}
-          disabled={isMainTestRunning}
-          style={{
-            marginTop: "8px",
-            padding: "12px 16px",
-            background: isMainTestRunning 
-              ? "linear-gradient(135deg, #94a3b8 0%, #64748b 100%)"
-              : "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
-            border: "none",
-            borderRadius: "40px",
-            fontSize: "13px",
-            cursor: isMainTestRunning ? "not-allowed" : "pointer",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            width: "100%",
-            justifyContent: "center",
-            fontWeight: "500",
-            transition: "all 0.2s ease",
-            opacity: isMainTestRunning ? 0.6 : 1,
-            boxShadow: isMainTestRunning ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
-          }}
-          onMouseEnter={(e) => {
-            if (!isMainTestRunning) {
-              e.currentTarget.style.transform = "scale(1.02)";
-            }
-          }}
-          onMouseLeave={(e) => {
-            if (!isMainTestRunning) {
-              e.currentTarget.style.transform = "scale(1)";
-            }
-          }}
+        {bestStats && <QuickStatsBar bestStats={bestStats} formatSpeed={formatSpeed} />}
+
+        {/* ========== SHARE SECTION (Dedicated, right below Hero after test) ========== */}
+        <ShareResultCard 
+          score={score}
+          isVisible={!isTestActive && score !== null}
+          onClick={() => setShowShareCard(true)}
+        />
+
+        {/* ========== AFTER TEST (Progressive Reveal) ========== */}
+        
+        {showMetrics && (
+          <>
+            {showSmartInsight && (
+              <div style={{ animation: "fadeInUp 0.4s ease" }}>
+                <SmartInsight 
+                  metrics={{ ping, download, upload, jitter, bufferbloat, networkType, score, bestDownload: bestStats?.bestDownload || 0 }} 
+                />
+              </div>
+            )}
+            {showHealthAlert && <HealthAlert pattern={timePattern} />}
+          </>
+        )}
+
+
+
+        {/* ========== ENHANCED COLLAPSIBLE SECTIONS ========== */}
+        
+        {/* Section 1: Network Details */}
+        <EnhancedCollapsibleSection 
+          sectionKey="network"
+          defaultOpen={openSections.network || false}
+          onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, network: isOpen }))}
         >
-          <span style={{ fontSize: "18px" }}>📡</span>
-          <span>Find Best Signal (Real-time Ping Scanner)</span>
-          {isMainTestRunning && (
-            <span style={{ fontSize: "10px", background: "rgba(0,0,0,0.3)", padding: "2px 8px", borderRadius: "20px" }}>
-              Speed Test Running
-            </span>
-          )}
-        </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <NetworkSelector 
+              networkName={networkName}
+              setNetworkName={setNetworkName}
+              savedNetworks={savedNetworks}
+              setSavedNetworks={setSavedNetworks}
+            />
+            {showNetworkInfo && (
+              <NetworkInfo 
+                triggerRefresh={testCompleted} 
+                onNetworkDetected={(type) => console.log("Network type:", type)}
+                testPing={ping}
+                testJitter={jitter}
+                testDownload={download}
+                testUpload={upload}
+              />
+            )}
+            <RealServerSelector onServerChange={handleServerChange} currentServerId={selectedServer} />
+          </div>
+        </EnhancedCollapsibleSection>
 
-        <PingScanner isOpen={showPingScanner} onClose={() => setShowPingScanner(false)} />
+        {/* Section 2: Tools (Ping Scanner - HIGHLIGHTED) - Share button removed from here */}
+        <EnhancedCollapsibleSection 
+          sectionKey="tools"
+          defaultOpen={openSections.tools || false}
+          onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, tools: isOpen }))}
+          isHighlighted={true}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div id="ping-scanner-card" style={{
+              background: "linear-gradient(135deg, rgba(59,130,246,0.1) 0%, rgba(139,92,246,0.1) 100%)",
+              borderRadius: "12px",
+              padding: "12px",
+              border: "1px solid rgba(59,130,246,0.3)",
+              transition: "box-shadow 0.3s ease",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ fontSize: "20px" }}>📡</span>
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "#1e293b" }}>Live Ping Scanner</div>
+                  <div style={{ fontSize: "10px", color: "#64748b" }}>Find your best signal spot by walking around</div>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPingScanner(true)}
+                disabled={isMainTestRunning}
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  background: isMainTestRunning ? "#94a3b8" : "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+                  border: "none",
+                  borderRadius: "40px",
+                  color: "#fff",
+                  cursor: isMainTestRunning ? "not-allowed" : "pointer",
+                  fontSize: "12px",
+                  fontWeight: "500",
+                  opacity: isMainTestRunning ? 0.6 : 1,
+                }}
+              >
+                🔍 Open Ping Scanner
+              </button>
+            </div>
+          </div>
+        </EnhancedCollapsibleSection>
 
-        <RealServerSelector onServerChange={handleServerChange} currentServerId={selectedServer} />
+        {/* Section 3: Insights & Analysis */}
+        <EnhancedCollapsibleSection 
+          sectionKey="insights"
+          defaultOpen={openSections.insights || false}
+          onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, insights: isOpen }))}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {!isTestActive && (insights.length > 0 || modeResult || report) && (
+              <Insights insights={insights} modeResult={modeResult} report={report} networkType={networkType} />
+            )}
+            <AllTimeBest bestStats={bestStats} formatSpeed={formatSpeed} />
+          </div>
+        </EnhancedCollapsibleSection>
 
-        {!isTestActive && score !== null && <ShareButton onClick={() => setShowShareCard(true)} />}
-
-        {!isTestActive && (insights.length > 0 || modeResult || report) && (
-          <Insights insights={insights} modeResult={modeResult} report={report} networkType={networkType} />
-        )}
-
-        <AdvancedDetails
-          bufferbloat={bufferbloat}
-          history={history}
-          autoRun={autoRun}
-          onAutoRunToggle={() => setAutoRun(!autoRun)}
-          monitorPing={monitorPing}
-          isTabVisible={isTabVisible}
-          isTestActive={isTestActive}
-          download={download}
-          upload={upload}
-          phase={phase}
-        />
-
-        <LiveGraphPopup
-          isOpen={showGraphPopup}
-          onClose={() => setShowGraphPopup(false)}
-          downloadHistory={downloadHistory}
-          uploadHistory={uploadHistory}
-          pingHistory={pingHistory}
-          jitterHistory={jitterHistory}
-          download={download}
-          upload={upload}
-          ping={ping}
-          jitter={jitter}
-          phase={phase}
-          running={running}
-          testSelection={testSelection}
-        />
-
-        {celebration && celebration.show && (
-          <CelebrationPopup
-            isOpen={celebration.show}
-            onClose={() => setCelebration(null)}
-            records={celebration.records}
-            isFirstTime={celebration.isFirstTime}
-            firstTimeType={celebration.firstTimeType}
-          />
-        )}
-
-        {comparisonPopup && comparisonPopup.show && (
-          <ComparisonPopup
-            isOpen={comparisonPopup.show}
-            onClose={handleComparisonClose}
-            improvements={comparisonPopup.improvements}
-          />
-        )}
-
-        {showShareCard && (
-          <ShareableResultCard
-            score={score}
-            ping={ping}
+        {/* Section 4: Advanced Details */}
+        <EnhancedCollapsibleSection 
+          sectionKey="advanced"
+          defaultOpen={openSections.advanced || false}
+          onToggle={(isOpen) => setOpenSections(prev => ({ ...prev, advanced: isOpen }))}
+        >
+          <AdvancedDetails
+            bufferbloat={bufferbloat}
+            history={history}
+            autoRun={autoRun}
+            onAutoRunToggle={() => setAutoRun(!autoRun)}
+            monitorPing={monitorPing}
+            isTabVisible={isTabVisible}
+            isTestActive={isTestActive}
             download={download}
             upload={upload}
-            jitter={jitter}
-            networkType={networkType}
-            mode={mode}
-            modeResult={modeResult}
-            onClose={() => setShowShareCard(false)}
+            phase={phase}
           />
-        )}
+        </EnhancedCollapsibleSection>
 
         <FooterMessage />
       </div>
 
+      {/* Popups */}
+      <PingScanner isOpen={showPingScanner} onClose={() => setShowPingScanner(false)} />
+      
+      <SmartRedirectPopup 
+        isOpen={smartPopup.isOpen}
+        onClose={() => setSmartPopup({ isOpen: false, type: "high-latency" })}
+        onAction={handleSmartPopupAction}
+        type={smartPopup.type}
+        data={smartPopup.data}
+      />
+      
+      <LiveGraphPopup
+        isOpen={showGraphPopup}
+        onClose={() => setShowGraphPopup(false)}
+        downloadHistory={downloadHistory}
+        uploadHistory={uploadHistory}
+        pingHistory={pingHistory}
+        jitterHistory={jitterHistory}
+        download={download}
+        upload={upload}
+        ping={ping}
+        jitter={jitter}
+        phase={phase}
+        running={running}
+        testSelection={testSelection}
+      />
+      
+      {celebration && celebration.show && (
+        <CelebrationPopup isOpen={celebration.show} onClose={() => setCelebration(null)} records={celebration.records} isFirstTime={celebration.isFirstTime} firstTimeType={celebration.firstTimeType} />
+      )}
+      
+      {comparisonPopup && comparisonPopup.show && (
+        <ComparisonPopup isOpen={comparisonPopup.show} onClose={handleComparisonClose} improvements={comparisonPopup.improvements} />
+      )}
+      
+      {showShareCard && (
+        <ShareableResultCard score={score} ping={ping} download={download} upload={upload} jitter={jitter} networkType={networkType} mode={mode} modeResult={modeResult} onClose={() => setShowShareCard(false)} />
+      )}
+
       <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.6; }
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>

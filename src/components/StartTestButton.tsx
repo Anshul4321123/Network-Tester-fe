@@ -1,4 +1,4 @@
-// components/StartTestButton.tsx
+// components/StartTestButton.tsx - MOBILE OPTIMIZED
 import { useState } from "react";
 
 interface Props {
@@ -24,7 +24,7 @@ export default function StartTestButton({ onClick, disabled }: Props) {
       onClick={handleClick}
       disabled={disabled || isLoading}
       style={{
-        padding: "12px 24px",
+        padding: "clamp(10px, 3vw, 12px) clamp(16px, 5vw, 24px)",
         width: "100%",
         cursor: (disabled || isLoading) ? "not-allowed" : "pointer",
         background: (disabled || isLoading) ? "#94a3b8" : "#10b981",
@@ -32,8 +32,9 @@ export default function StartTestButton({ onClick, disabled }: Props) {
         border: "none",
         borderRadius: "60px",
         fontWeight: "bold",
-        fontSize: "16px",
+        fontSize: "clamp(14px, 4vw, 16px)",
         transition: "all 0.2s",
+        minHeight: "48px", // Better touch target on mobile
       }}
     >
       {isLoading ? "⏳ Testing..." : (disabled ? "🚀 Testing..." : "Start Test")}

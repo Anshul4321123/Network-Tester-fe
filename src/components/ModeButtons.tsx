@@ -1,4 +1,4 @@
-// components/ModeButtons.tsx
+// components/ModeButtons.tsx - MOBILE OPTIMIZED
 interface ModeButtonsProps {
   mode: string;
   running: boolean;
@@ -17,7 +17,7 @@ export default function ModeButtons({ mode, running, onModeChange }: ModeButtons
       style={{
         display: "flex",
         flexWrap: "wrap",
-        gap: "8px",
+        gap: "6px",
         justifyContent: "center",
       }}
     >
@@ -27,16 +27,17 @@ export default function ModeButtons({ mode, running, onModeChange }: ModeButtons
           onClick={() => onModeChange(m.id)}
           disabled={running}
           style={{
-            padding: "6px 14px",
+            padding: "clamp(4px, 2vw, 6px) clamp(10px, 3vw, 14px)",
             background: mode === m.id ? "#10b981" : "#f1f5f9",
             color: mode === m.id ? "#fff" : "#334155",
             border: mode === m.id ? "none" : "1px solid #e2e8f0",
             borderRadius: "40px",
             cursor: running ? "not-allowed" : "pointer",
             fontWeight: "500",
-            fontSize: "clamp(11px, 2.5vw, 13px)",
+            fontSize: "clamp(10px, 2.5vw, 13px)",
             transition: "all 0.2s",
             opacity: running ? 0.6 : 1,
+            flex: "0 1 auto",
           }}
         >
           {m.icon} {m.label}
