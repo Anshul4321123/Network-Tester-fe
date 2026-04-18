@@ -349,6 +349,12 @@ export default function useSpeedTest() {
     const pattern = detectTimePatterns(history);
     setTimePattern(pattern);
   };
+  const pingEndpoint = async (): Promise<number> => {
+  const start = performance.now();
+  await fetch(`/ping?ts=${Date.now()}`, { cache: 'no-store' });
+  return performance.now() - start;
+};
+
 
   // ----------------------------------------------------------------------
   // MAIN TEST RUNNER - UPDATED for new storage format
@@ -495,5 +501,6 @@ export default function useSpeedTest() {
     monitorPing,
     running,
     timePattern,
+    pingEndpoint
   };
 }

@@ -1,4 +1,4 @@
-// Home.tsx - With cross icons on dropdown items
+// Home.tsx - With test blocking and improved PingScanner button
 import { useEffect, useState } from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
@@ -33,6 +33,7 @@ import {
   type BestStats,
   type Achievements 
 } from "../utils/storage";
+import PingScanner from "../components/PingScanner";
 
 interface RecordBreak {
   type: string;
@@ -40,7 +41,7 @@ interface RecordBreak {
   newValue: number;
 }
 
-// Predefined network options (without emojis)
+// Predefined network options
 const DEFAULT_NETWORKS = [
   "Home Network",
   "Office Network",
@@ -84,6 +85,7 @@ export default function Home() {
   const [celebration, setCelebration] = useState<any>(null);
   const [comparisonPopup, setComparisonPopup] = useState<any>(null);
   const [lastProcessedTestId, setLastProcessedTestId] = useState<string>("");
+  const [showPingScanner, setShowPingScanner] = useState(false);
 
   const {
     ping,
@@ -150,7 +152,6 @@ export default function Home() {
   };
 
   const handleDeleteNetwork = (networkToDelete: string) => {
-    // Don't allow deleting if it's the last network
     if (savedNetworks.length <= 1) {
       alert("You need at least one network name. Add a new one first.");
       setShowDeleteConfirm(null);
@@ -160,7 +161,6 @@ export default function Home() {
     const updatedNetworks = savedNetworks.filter(n => n !== networkToDelete);
     setSavedNetworks(updatedNetworks);
     
-    // If the deleted network was selected, select the first available
     if (networkName === networkToDelete && updatedNetworks.length > 0) {
       setNetworkName(updatedNetworks[0]);
     }
@@ -216,7 +216,6 @@ export default function Home() {
     console.log("📡 TEST USING Network Name:", currentNetworkName);
     console.log("🌐 TEST USING Network Type:", finalNetworkType);
     
-    // Store the network name used for this test
     localStorage.setItem("test_network_name", currentNetworkName);
     localStorage.setItem("test_start_time", Date.now().toString());
     
@@ -256,7 +255,6 @@ export default function Home() {
     const finalNetworkName = testNetworkName || networkName || "Home Network";
     const finalNetworkType = networkType || "unknown";
 
-    // Clear test start data after use
     localStorage.removeItem("test_network_name");
     localStorage.removeItem("test_start_time");
     
@@ -364,6 +362,9 @@ export default function Home() {
     return <ServerWarming onComplete={() => {}} />;
   }
 
+  // Check if main test is running
+  const isMainTestRunning = running || (phase !== "idle" && phase !== "complete");
+
   return (
     <div style={getBackgroundStyle()}>
       <div
@@ -379,7 +380,7 @@ export default function Home() {
       >
         <TrustBanner />
 
-        {/* Network Name Dropdown Selector with Cross Icons */}
+        {/* Network Name Dropdown Selector */}
         <div className="network-dropdown" style={{
           background: "linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)",
           borderRadius: "12px",
@@ -409,7 +410,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Custom Dropdown Button */}
           <div
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
             style={{
@@ -431,7 +431,6 @@ export default function Home() {
             <span style={{ fontSize: "12px", color: "#94a3b8" }}>{isDropdownOpen ? "▲" : "▼"}</span>
           </div>
 
-          {/* Dropdown Menu with Cross Icons */}
           {isDropdownOpen && (
             <div
               style={{
@@ -460,23 +459,15 @@ export default function Home() {
                     cursor: "pointer",
                     transition: "background 0.2s",
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "#f8fafc";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "#f8fafc"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
                 >
                   <span
                     onClick={() => {
                       setNetworkName(net);
                       setIsDropdownOpen(false);
                     }}
-                    style={{
-                      flex: 1,
-                      fontSize: "13px",
-                      color: "#1e293b",
-                    }}
+                    style={{ flex: 1, fontSize: "13px", color: "#1e293b" }}
                   >
                     {net}
                   </span>
@@ -567,31 +558,13 @@ export default function Home() {
               <div style={{ display: "flex", gap: "12px" }}>
                 <button
                   onClick={handleAddNetwork}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    background: "#10b981",
-                    border: "none",
-                    borderRadius: "10px",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontWeight: "500",
-                  }}
+                  style={{ flex: 1, padding: "10px", background: "#10b981", border: "none", borderRadius: "10px", color: "#fff", cursor: "pointer", fontWeight: "500" }}
                 >
                   Add
                 </button>
                 <button
                   onClick={() => setShowAddNetwork(false)}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    background: "#f1f5f9",
-                    border: "none",
-                    borderRadius: "10px",
-                    color: "#64748b",
-                    cursor: "pointer",
-                    fontWeight: "500",
-                  }}
+                  style={{ flex: 1, padding: "10px", background: "#f1f5f9", border: "none", borderRadius: "10px", color: "#64748b", cursor: "pointer", fontWeight: "500" }}
                 >
                   Cancel
                 </button>
@@ -637,31 +610,13 @@ export default function Home() {
               <div style={{ display: "flex", gap: "12px" }}>
                 <button
                   onClick={() => handleDeleteNetwork(showDeleteConfirm)}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    background: "#ef4444",
-                    border: "none",
-                    borderRadius: "10px",
-                    color: "#fff",
-                    cursor: "pointer",
-                    fontWeight: "500",
-                  }}
+                  style={{ flex: 1, padding: "10px", background: "#ef4444", border: "none", borderRadius: "10px", color: "#fff", cursor: "pointer", fontWeight: "500" }}
                 >
                   Yes, Delete
                 </button>
                 <button
                   onClick={() => setShowDeleteConfirm(null)}
-                  style={{
-                    flex: 1,
-                    padding: "10px",
-                    background: "#f1f5f9",
-                    border: "none",
-                    borderRadius: "10px",
-                    color: "#64748b",
-                    cursor: "pointer",
-                    fontWeight: "500",
-                  }}
+                  style={{ flex: 1, padding: "10px", background: "#f1f5f9", border: "none", borderRadius: "10px", color: "#64748b", cursor: "pointer", fontWeight: "500" }}
                 >
                   Cancel
                 </button>
@@ -706,6 +661,57 @@ export default function Home() {
           showLiveGraph={showLiveGraph}
           onToggleLiveGraph={() => setShowLiveGraph(!showLiveGraph)}
         />
+
+        {/* Improved Ping Scanner Button - Now blocks when main test is running */}
+        <button
+          onClick={() => {
+            if (!isMainTestRunning) {
+              setShowPingScanner(true);
+            }
+          }}
+          disabled={isMainTestRunning}
+          style={{
+            marginTop: "8px",
+            padding: "12px 16px",
+            background: isMainTestRunning 
+              ? "linear-gradient(135deg, #94a3b8 0%, #64748b 100%)"
+              : "linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)",
+            border: "none",
+            borderRadius: "40px",
+            fontSize: "13px",
+            cursor: isMainTestRunning ? "not-allowed" : "pointer",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            width: "100%",
+            justifyContent: "center",
+            fontWeight: "500",
+            transition: "all 0.2s ease",
+            opacity: isMainTestRunning ? 0.6 : 1,
+            boxShadow: isMainTestRunning ? "none" : "0 4px 12px rgba(59,130,246,0.3)",
+          }}
+          onMouseEnter={(e) => {
+            if (!isMainTestRunning) {
+              e.currentTarget.style.transform = "scale(1.02)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isMainTestRunning) {
+              e.currentTarget.style.transform = "scale(1)";
+            }
+          }}
+        >
+          <span style={{ fontSize: "18px" }}>📡</span>
+          <span>Find Best Signal (Real-time Ping Scanner)</span>
+          {isMainTestRunning && (
+            <span style={{ fontSize: "10px", background: "rgba(0,0,0,0.3)", padding: "2px 8px", borderRadius: "20px" }}>
+              Speed Test Running
+            </span>
+          )}
+        </button>
+
+        <PingScanner isOpen={showPingScanner} onClose={() => setShowPingScanner(false)} />
 
         <RealServerSelector onServerChange={handleServerChange} currentServerId={selectedServer} />
 
