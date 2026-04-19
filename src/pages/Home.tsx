@@ -271,14 +271,30 @@ function NetworkSelector({ networkName, setNetworkName, savedNetworks, setSavedN
         </div>
       )}
       {showAdd && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAdd(false)}>
-          <div style={{ background: "white", borderRadius: 16, padding: 20, width: 280 }} onClick={e => e.stopPropagation()}>
-            <h4 style={{ marginBottom: 12 }}>Add Network</h4>
-            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Network name" style={{ width: "100%", padding: 8, marginBottom: 12, border: "1px solid #e2e8f0", borderRadius: 8 }} autoFocus />
-            <button onClick={add} style={{ width: "100%", padding: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>Add</button>
-          </div>
-        </div>
-      )}
+  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAdd(false)}>
+    <div style={{ background: "white", borderRadius: 16, padding: 20, width: 280 }} onClick={e => e.stopPropagation()}>
+      <h4 style={{ marginBottom: 12, color: "#1e293b" }}>Add Network</h4>
+      <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Add a custom name for your Network.</p>
+      <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>
+        Press <span style={{ color: "#3b82f6", fontWeight: "500", background: "#eff6ff", padding: "2px 6px", borderRadius: 4 }}>🪟 + .</span> to add emoji for better context
+      </p>
+      <input 
+        type="text" 
+        value={newName} 
+        onChange={e => setNewName(e.target.value)} 
+        placeholder="e.g., 🏠 Home WiFi" 
+        style={{ width: "100%", padding: 8, marginBottom: 12, border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#1e293b" }} 
+        autoFocus 
+      />
+      <button 
+        onClick={add} 
+        style={{ width: "100%", padding: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}
+      >
+        Add Network
+      </button>
+    </div>
+  </div>
+)}
       {delConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setDelConfirm(null)}>
           <div style={{ background: "white", borderRadius: 16, padding: 20, width: 260, textAlign: "center" }} onClick={e => e.stopPropagation()}>
