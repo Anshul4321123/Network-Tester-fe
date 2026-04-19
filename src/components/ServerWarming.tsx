@@ -1,5 +1,6 @@
-// components/ServerWarming.tsx - FIXED with random starting fact
-import { useState, useEffect } from "react";
+// components/ServerWarming.tsx - With Logo component
+import { useState, useEffect, useRef } from "react";
+import Logo from "./Logo";
 
 const RANDOM_FACTS = [
   "💡 Did you know? The first internet speed test was created in 1996!",
@@ -17,6 +18,16 @@ const RANDOM_FACTS = [
   "🏆 SpeedLab's scoring system considers download (40%), upload (20%), and ping (40%)!",
   "💪 Your internet speed can be affected by your router, devices, and even weather!",
   "🔄 Speed tests use multiple parallel connections for accuracy!",
+  "📱 The first smartphone with 5G was released in 2019!",
+  "🌐 There are over 1.1 billion websites on the internet!",
+  "🔒 The first SSL encryption was created in 1995!",
+  "📧 The first email was sent in 1971 by Ray Tomlinson!",
+  "🎥 YouTube was founded in 2005 by three former PayPal employees!",
+  "📊 A good jitter score is under 10ms for competitive gaming!",
+  "🏠 WiFi signals can be disrupted by microwaves and baby monitors!",
+  "⚡ Fiber optic cables transmit data at the speed of light!",
+  "🔄 Your IP address changes every time you reconnect to your router!",
+  "📡 Ping stands for Packet Internet Groper!",
 ];
 
 interface ServerWarmingProps {
@@ -24,65 +35,115 @@ interface ServerWarmingProps {
 }
 
 export default function ServerWarming({ onComplete }: ServerWarmingProps) {
-  // Initialize with a random fact index between 0 and RANDOM_FACTS.length - 1
-  const [factIndex, setFactIndex] = useState(() => {
-    return Math.floor(Math.random() * RANDOM_FACTS.length);
-  });
+  // Start with random fact
+  const [factIndex, setFactIndex] = useState(() => Math.floor(Math.random() * RANDOM_FACTS.length));
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("🔄 Connecting to server...");
+  const [, setPingTime] = useState<number | null>(null);
+  
+  const factIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cleanup all intervals on unmount
+  useEffect(() => {
+    return () => {
+      if (factIntervalRef.current) clearInterval(factIntervalRef.current);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  // Function to cycle facts every 2 seconds
+  const startFactRotation = () => {
+    if (factIntervalRef.current) clearInterval(factIntervalRef.current);
+    factIntervalRef.current = setInterval(() => {
+      setFactIndex(prev => (prev + 1) % RANDOM_FACTS.length);
+    }, 2000);
+  };
+
+  // Function to animate progress bar
+  const startProgressAnimation = (duration: number) => {
+    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    const startTime = Date.now();
+    progressIntervalRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const newProgress = Math.min((elapsed / duration) * 100, 100);
+      setProgress(newProgress);
+      if (newProgress >= 100 && progressIntervalRef.current) {
+        clearInterval(progressIntervalRef.current);
+      }
+    }, 50);
+  };
 
   useEffect(() => {
-    const startTime = Date.now();
-    const minWarmupTime = 2000;
-    let interval: ReturnType<typeof setInterval> | null = null;
+    const minWarmupTime = 3000;
+    let isCompleted = false;
 
     const warmupServer = async () => {
       try {
+        // Start rotating facts immediately
+        startFactRotation();
+        startProgressAnimation(minWarmupTime);
+        
         setStatus("📡 Pinging server...");
+        
         const pingStart = performance.now();
-        await fetch(`${import.meta.env.VITE_BASE_URL}/ping`, {
+        const response = await fetch(`${import.meta.env.VITE_BASE_URL}/ping`, {
           cache: 'no-store',
           headers: { 'Cache-Control': 'no-cache' }
         });
-        const pingTime = performance.now() - pingStart;
-        setStatus(`✅ Server responded in ${pingTime.toFixed(0)}ms!`);
         
-        // Start cycling through facts (increment by 1 each time)
-        interval = setInterval(() => {
-          setFactIndex(prev => (prev + 1) % RANDOM_FACTS.length);
-          setProgress(prev => Math.min(prev + 10, 100));
-        }, 200);
+        if (!response.ok) throw new Error("Server not ready");
         
-        const elapsed = Date.now() - startTime;
+        const pingDuration = performance.now() - pingStart;
+        setPingTime(pingDuration);
+        setStatus(`✅ Server ready! (${pingDuration.toFixed(0)}ms response)`);
+        
+        // Wait for minimum warmup time
+        const elapsed = Date.now() - pingStart;
         const remaining = Math.max(0, minWarmupTime - elapsed);
         
-        setTimeout(() => {
-          if (interval) clearInterval(interval);
-          onComplete();
+        timeoutRef.current = setTimeout(() => {
+          if (!isCompleted) {
+            isCompleted = true;
+            if (factIntervalRef.current) clearInterval(factIntervalRef.current);
+            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+            onComplete();
+          }
         }, remaining);
         
       } catch (error) {
         console.error("Server warmup failed:", error);
-        setStatus("⚠️ Server starting up... (first test may take longer)");
+        setStatus("⚠️ Starting server... (first test may take longer)");
         
-        interval = setInterval(() => {
-          setFactIndex(prev => (prev + 1) % RANDOM_FACTS.length);
-          setProgress(prev => Math.min(prev + 10, 100));
-        }, 200);
+        startFactRotation();
+        startProgressAnimation(4000);
         
-        setTimeout(() => {
-          if (interval) clearInterval(interval);
-          onComplete();
-        }, 3000);
+        timeoutRef.current = setTimeout(() => {
+          if (!isCompleted) {
+            isCompleted = true;
+            if (factIntervalRef.current) clearInterval(factIntervalRef.current);
+            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+            onComplete();
+          }
+        }, 4000);
       }
     };
 
     warmupServer();
 
     return () => {
-      if (interval) clearInterval(interval);
+      isCompleted = true;
     };
   }, [onComplete]);
+
+  // Get status color
+  const getStatusColor = () => {
+    if (status.includes("ready")) return "#10b981";
+    if (status.includes("Starting")) return "#f59e0b";
+    return "#fff";
+  };
 
   return (
     <div
@@ -92,7 +153,7 @@ export default function ServerWarming({ onComplete }: ServerWarmingProps) {
         left: 0,
         right: 0,
         bottom: 0,
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
         zIndex: 10000,
         display: "flex",
         alignItems: "center",
@@ -104,39 +165,57 @@ export default function ServerWarming({ onComplete }: ServerWarmingProps) {
         style={{
           textAlign: "center",
           color: "#fff",
-          maxWidth: "400px",
-          padding: "32px",
+          maxWidth: "450px",
+          width: "90%",
+          padding: "clamp(24px, 5vw, 32px)",
         }}
       >
-        <div
-          style={{
-            width: "80px",
-            height: "80px",
-            margin: "0 auto 24px",
-            border: "4px solid rgba(255,255,255,0.2)",
-            borderTop: "4px solid #fff",
-            borderRadius: "50%",
-            animation: "spin 1s linear infinite",
-          }}
-        />
+        {/* Logo */}
+        <div style={{ marginBottom: "24px", display: "flex", justifyContent: "center" }}>
+          <Logo variant="compact" size="large" />
+        </div>
         
+        {/* Title - Server Warming Up */}
+        <h2 style={{ fontSize: "clamp(20px, 5vw, 24px)", fontWeight: "bold", marginBottom: "8px" }}>
+          Server Warming Up
+        </h2>
+        <p style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "24px" }}>
+          Preparing optimal test environment
+        </p>
+        
+        {/* Status with pulsing dot */}
         <div
           style={{
-            fontSize: "18px",
-            fontWeight: "600",
-            marginBottom: "8px",
+            fontSize: "14px",
+            fontWeight: "500",
+            marginBottom: "20px",
+            color: getStatusColor(),
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
           }}
         >
+          <div
+            style={{
+              width: "8px",
+              height: "8px",
+              background: getStatusColor(),
+              borderRadius: "50%",
+              animation: "pulseDot 1.5s infinite",
+            }}
+          />
           {status}
         </div>
         
+        {/* Linear Progress Bar - Sky Blue */}
         <div
           style={{
             width: "100%",
-            height: "4px",
-            background: "rgba(255,255,255,0.2)",
-            borderRadius: "2px",
-            margin: "16px 0",
+            height: "6px",
+            background: "rgba(56, 189, 248, 0.2)",
+            borderRadius: "3px",
+            margin: "20px 0",
             overflow: "hidden",
           }}
         >
@@ -144,38 +223,47 @@ export default function ServerWarming({ onComplete }: ServerWarmingProps) {
             style={{
               width: `${progress}%`,
               height: "100%",
-              background: "#fff",
-              borderRadius: "2px",
-              transition: "width 0.2s ease",
+              background: "linear-gradient(90deg, #38bdf8, #7dd3fc, #38bdf8)",
+              borderRadius: "3px",
+              transition: "width 0.05s linear",
+              boxShadow: "0 0 8px rgba(56, 189, 248, 0.5)",
             }}
           />
         </div>
         
+        {/* Fun Facts Section */}
         <div
           style={{
-            background: "rgba(255,255,255,0.15)",
+            background: "rgba(255,255,255,0.05)",
             borderRadius: "16px",
-            padding: "16px",
+            padding: "18px",
             marginTop: "16px",
-            animation: "slideUp 0.3s ease",
+            border: "1px solid rgba(56, 189, 248, 0.2)",
+            minHeight: "100px",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
           }}
+          key={factIndex}
         >
-          <div style={{ fontSize: "12px", opacity: 0.8, marginBottom: "8px" }}>
-            ✨ Did you know?
+          <div style={{ fontSize: "11px", opacity: 0.6, marginBottom: "8px", letterSpacing: "1px", color: "#38bdf8" }}>
+            ✨ FUN FACT
           </div>
-          <div style={{ fontSize: "14px", fontWeight: "500", lineHeight: "1.5" }}>
+          <div style={{ fontSize: "13px", fontWeight: "500", lineHeight: "1.5", color: "#cbd5e1" }}>
             {RANDOM_FACTS[factIndex]}
           </div>
         </div>
         
+        {/* Tip */}
         <div
           style={{
-            fontSize: "11px",
-            opacity: 0.6,
+            fontSize: "10px",
+            opacity: 0.5,
             marginTop: "24px",
+            color: "#94a3b8",
           }}
         >
-          Warming up server for best performance...
+          ⚡ First test may take slightly longer for accurate results
         </div>
       </div>
 
@@ -184,19 +272,27 @@ export default function ServerWarming({ onComplete }: ServerWarmingProps) {
           from { opacity: 0; }
           to { opacity: 1; }
         }
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(20px);
-          }
-          to {
+        
+        @keyframes pulse {
+          0%, 100% { 
+            transform: scale(1);
             opacity: 1;
-            transform: translateY(0);
+          }
+          50% { 
+            transform: scale(1.05);
+            opacity: 0.9;
           }
         }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
+        
+        @keyframes pulseDot {
+          0%, 100% { 
+            opacity: 1;
+            transform: scale(1);
+          }
+          50% { 
+            opacity: 0.5;
+            transform: scale(1.2);
+          }
         }
       `}</style>
     </div>
