@@ -4,6 +4,7 @@ import Home from "./pages/Home";
 import History from "./pages/History";
 import Info from "./pages/Info";
 import DevMessage from "./pages/DevMessage";
+import NotFound from "./pages/NotFound"; // Add this import
 import Navbar from "./components/Navbar";
 
 // Growth Pages
@@ -29,6 +30,9 @@ function App() {
         <Route path="/improve-wifi-signal" element={<ImproveWifiSignal />} />
         <Route path="/internet-speed-for-gaming" element={<InternetSpeedForGaming />} />
         <Route path="/what-is-good-internet-speed" element={<WhatIsGoodInternetSpeed />} />
+        
+        {/* 404 Page - Must be last */}
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );
