@@ -1,289 +1,150 @@
 // components/HighScorePopup.tsx
-import { useEffect, useState } from "react";
+// Shows ALL broken personal bests as equal cards — 1 record = 1 card, 4 records = 4 cards.
 
-interface HighScorePopupProps {
-  isOpen: boolean;
-  onClose: () => void;
-  records: { type: string; oldValue: number; newValue: number }[];
+
+export interface HighScoreRecord {
+  metric: "score" | "download" | "upload" | "ping";
+  oldValue: number;
+  newValue: number;
+  isFirstEver: boolean;
 }
 
-export default function HighScorePopup({ isOpen, onClose, records }: HighScorePopupProps) {
-  const [confetti, setConfetti] = useState<{ id: number; x: number; y: number; color: string }[]>([]);
+interface Props {
+  isOpen: boolean;
+  onClose: () => void;
+  records: HighScoreRecord[];
+}
 
-  useEffect(() => {
-    if (isOpen) {
-      console.log("HighScorePopup OPEN with records:", records);
-      const newConfetti = [];
-      for (let i = 0; i < 200; i++) {
-        newConfetti.push({
-          id: i,
-          x: Math.random() * 100,
-          y: Math.random() * 100,
-          color: `hsl(${Math.random() * 360}, 100%, 60%)`,
-        });
-      }
-      setConfetti(newConfetti);
-    }
-  }, [isOpen]);
+const META: Record<HighScoreRecord["metric"], { label: string; icon: string; color: string; betterIsLower: boolean }> = {
+  score:    { label: "Overall Score",  icon: "🏆", color: "#f59e0b", betterIsLower: false },
+  download: { label: "Download Speed", icon: "⬇️",  color: "#3b82f6", betterIsLower: false },
+  upload:   { label: "Upload Speed",   icon: "⬆️",  color: "#8b5cf6", betterIsLower: false },
+  ping:     { label: "Best Ping",      icon: "📡", color: "#10b981", betterIsLower: true  },
+};
 
-  if (!isOpen || !records || records.length === 0) {
-    console.log("HighScorePopup not showing - no records");
-    return null;
-  }
+function fmt(metric: HighScoreRecord["metric"], v: number): string {
+  if (metric === "score") return `${Math.round(v)}/100`;
+  if (metric === "ping")  return `${Math.round(v)}ms`;
+  return `${v.toFixed(1)} Mbps`;
+}
 
-  const formatValue = (value: number, type: string) => {
-    if (type === "ping") return `${value.toFixed(1)} ms`;
-    if (value > 1000) return `${(value / 1000).toFixed(1)} Gbps`;
-    return `${value.toFixed(1)} Mbps`;
-  };
+function improvePct(r: HighScoreRecord): number | null {
+  if (r.isFirstEver || r.oldValue === 0) return null;
+  const delta = r.metric === "ping"
+    ? (r.oldValue - r.newValue) / r.oldValue
+    : (r.newValue - r.oldValue) / r.oldValue;
+  return Math.round(delta * 100);
+}
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case "download": return "⬇️";
-      case "upload": return "⬆️";
-      case "ping": return "📡";
-      case "score": return "⭐";
-      default: return "🏆";
-    }
-  };
+// Single record card
+function RecordCard({ r }: { r: HighScoreRecord }) {
+  const m   = META[r.metric];
+  const pct = improvePct(r);
+  return (
+    <div style={{
+      background: `linear-gradient(135deg, ${m.color}18 0%, ${m.color}08 100%)`,
+      border: `1px solid ${m.color}40`,
+      borderRadius: 14,
+      padding: "12px 14px",
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+    }}>
+      {/* Icon */}
+      <div style={{ fontSize: 28, flexShrink: 0 }}>{m.icon}</div>
 
-  const getLabel = (type: string) => {
-    switch (type) {
-      case "download": return "Download Speed";
-      case "upload": return "Upload Speed";
-      case "ping": return "Ping Latency";
-      case "score": return "Overall Score";
-      default: return "Record";
-    }
-  };
+      {/* Label + values */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: m.color, textTransform: "uppercase" as const, letterSpacing: "0.06em", marginBottom: 2 }}>
+          {r.isFirstEver ? "First Record" : "New Best"}
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "#e2e8f0", marginBottom: 4 }}>{m.label}</div>
+        {/* Before → After */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {!r.isFirstEver && (
+            <>
+              <span style={{ fontSize: 13, color: "#64748b", textDecoration: "line-through" }}>{fmt(r.metric, r.oldValue)}</span>
+              <span style={{ fontSize: 11, color: "#475569" }}>→</span>
+            </>
+          )}
+          <span style={{ fontSize: 15, fontWeight: 800, color: m.color }}>{fmt(r.metric, r.newValue)}</span>
+          {pct !== null && pct > 0 && (
+            <span style={{ fontSize: 10, background: `${m.color}22`, border: `1px solid ${m.color}44`, borderRadius: 20, padding: "1px 7px", color: m.color, fontWeight: 700 }}>
+              +{pct}%
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  const getImprovementText = (type: string, oldValue: number, newValue: number) => {
-    if (type === "ping") {
-      const improvement = oldValue - newValue;
-      const percent = ((oldValue - newValue) / oldValue) * 100;
-      return `${improvement.toFixed(1)} ms lower (${percent.toFixed(1)}% better)`;
-    }
-    const improvement = newValue - oldValue;
-    const percent = ((newValue - oldValue) / oldValue) * 100;
-    if (type === "score") {
-      return `${improvement.toFixed(0)} points higher (${percent.toFixed(1)}% better)`;
-    }
-    return `${improvement.toFixed(1)} Mbps faster (${percent.toFixed(1)}% better)`;
-  };
+export default function HighScorePopup({ isOpen, onClose, records }: Props) {
+  if (!isOpen || records.length === 0) return null;
 
-  const getCelebrationMessage = () => {
-    if (records.length === 1) {
-      const record = records[0];
-      if (record.type === "score") return "You've achieved your highest score ever! 🎯";
-      if (record.type === "ping") return "Your lowest ping ever! Amazing connection! ⚡";
-      if (record.type === "download") return "Lightning fast! New download record! 🚀";
-      if (record.type === "upload") return "Upload speed champion! New record! 📤";
-    }
-    return `You broke ${records.length} personal records! Incredible performance! 🎉`;
-  };
+  const isFirstEver = records.every(r => r.isFirstEver);
+  const count = records.length;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0,0,0,0.9)",
-        backdropFilter: "blur(8px)",
-        zIndex: 10000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        animation: "fadeIn 0.3s ease",
-      }}
-      onClick={onClose}
-    >
-      {confetti.map((p) => (
-        <div
-          key={p.id}
-          style={{
-            position: "absolute",
-            left: `${p.x}%`,
-            top: `${p.y}%`,
-            width: "8px",
-            height: "8px",
-            background: p.color,
-            borderRadius: "2px",
-            animation: `confettiFall ${1 + Math.random() * 2}s linear forwards`,
-            pointerEvents: "none",
-          }}
-        />
-      ))}
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(5px)", zIndex: 4000 }} />
 
+      {/* Modal */}
       <div
+        onClick={e => e.stopPropagation()}
         style={{
-          background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
-          borderRadius: "48px",
-          maxWidth: "480px",
-          width: "90%",
-          padding: "40px 28px",
-          textAlign: "center",
-          animation: "slideUp 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)",
-          boxShadow: "0 30px 60px rgba(0,0,0,0.5)",
-          border: "2px solid #fbbf24",
-          position: "relative",
-          overflow: "hidden",
+          position: "fixed", top: "50%", left: "50%",
+          transform: "translate(-50%, -50%)",
+          background: "linear-gradient(160deg, #1e293b 0%, #0f172a 100%)",
+          borderRadius: 24,
+          padding: "24px 20px 20px",
+          width: "calc(100% - 36px)",
+          maxWidth: 400,
+          maxHeight: "90vh",
+          overflowY: "auto",
+          zIndex: 4001,
+          boxShadow: "0 30px 60px rgba(0,0,0,0.55)",
+          border: "1px solid rgba(255,255,255,0.1)",
+          animation: "hsPopIn 0.35s cubic-bezier(0.34,1.56,0.64,1)",
         }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: "-50%",
-            left: "-50%",
-            width: "200%",
-            height: "200%",
-            background: "radial-gradient(circle, rgba(251,191,36,0.15) 0%, transparent 70%)",
-            animation: "rotate 8s linear infinite",
-            pointerEvents: "none",
-          }}
-        />
+        {/* Close */}
+        <button onClick={onClose} style={{ position: "absolute", top: 12, right: 12, background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, color: "#fff", fontSize: 16, cursor: "pointer", width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
 
-        <div style={{ fontSize: "80px", marginBottom: "8px", animation: "bounce 0.6s ease infinite" }}>
-          🏆
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 44, lineHeight: 1, marginBottom: 6 }}>{isFirstEver ? "🎉" : "🏅"}</div>
+          <h2 style={{ fontSize: 19, fontWeight: 800, color: "#fff", margin: "0 0 4px" }}>
+            {isFirstEver ? "First Test Records!" : `${count} New Personal Best${count > 1 ? "s" : ""}!`}
+          </h2>
+          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            {isFirstEver
+              ? "You've set your baseline — run more tests to beat these!"
+              : "You beat your 5-day bests in these categories:"}
+          </p>
         </div>
 
-        <div
-          style={{
-            fontSize: "32px",
-            fontWeight: "bold",
-            marginBottom: "8px",
-            background: "linear-gradient(135deg, #fbbf24 0%, #ef4444 50%, #fbbf24 100%)",
-            backgroundClip: "text",
-            WebkitBackgroundClip: "text",
-            color: "transparent",
-          }}
-        >
-          NEW HIGH SCORE!
+        {/* Record cards — one per broken metric */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+          {records.map(r => <RecordCard key={r.metric} r={r} />)}
         </div>
 
-        <div style={{ fontSize: "14px", color: "#94a3b8", marginBottom: "24px" }}>
-          {getCelebrationMessage()}
-        </div>
-
-        <div
-          style={{
-            background: "rgba(255,255,255,0.05)",
-            borderRadius: "24px",
-            padding: "20px",
-            marginBottom: "28px",
-          }}
-        >
-          {records.map((record, idx) => (
-            <div
-              key={idx}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "12px 0",
-                borderBottom: idx < records.length - 1 ? "1px solid rgba(255,255,255,0.1)" : "none",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div
-                  style={{
-                    width: "48px",
-                    height: "48px",
-                    background: "rgba(251,191,36,0.2)",
-                    borderRadius: "24px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: "24px",
-                  }}
-                >
-                  {getIcon(record.type)}
-                </div>
-                <div style={{ textAlign: "left" }}>
-                  <div style={{ fontWeight: "bold", color: "#f1f5f9" }}>{getLabel(record.type)}</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>
-                    Previous: {formatValue(record.oldValue, record.type)}
-                  </div>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: "20px", fontWeight: "bold", color: "#fbbf24" }}>
-                  {formatValue(record.newValue, record.type)}
-                </div>
-                <div style={{ fontSize: "10px", color: "#10b981" }}>
-                  ↑ {getImprovementText(record.type, record.oldValue, record.newValue)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
+        {/* CTA */}
         <button
           onClick={onClose}
-          style={{
-            width: "100%",
-            padding: "14px",
-            background: "linear-gradient(135deg, #fbbf24 0%, #d97706 100%)",
-            color: "#1e293b",
-            border: "none",
-            borderRadius: "40px",
-            cursor: "pointer",
-            fontSize: "16px",
-            fontWeight: "bold",
-            transition: "transform 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.02)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-          }}
+          style={{ width: "100%", padding: 12, background: "linear-gradient(135deg,#f59e0b,#d97706)", border: "none", borderRadius: 40, color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}
         >
-          Amazing! 🎉
+          Awesome! 🎊
         </button>
-
-        <div style={{ fontSize: "10px", color: "#64748b", marginTop: "16px" }}>
-          🏆 This is your new personal best!
-        </div>
       </div>
 
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(60px) scale(0.9);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-10px); }
-        }
-        @keyframes rotate {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        @keyframes confettiFall {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(360deg);
-            opacity: 0;
-          }
+        @keyframes hsPopIn {
+          from { opacity:0; transform:translate(-50%,-44%) scale(0.85); }
+          to   { opacity:1; transform:translate(-50%,-50%) scale(1);    }
         }
       `}</style>
-    </div>
+    </>
   );
 }
