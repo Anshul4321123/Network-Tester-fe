@@ -1,352 +1,197 @@
 // components/ComparisonPopup.tsx
+// Only shown after a real test completes and there is a previous test to compare against.
+// Added: jitter metric, stability rating, trend sparkline text.
 import { useEffect, useState } from "react";
+
+interface Improvement {
+  type: string;
+  oldValue: number;
+  newValue: number;
+  improved: boolean;
+}
 
 interface ComparisonPopupProps {
   isOpen: boolean;
   onClose: () => void;
-  improvements: { type: string; oldValue: number; newValue: number; improved: boolean }[];
+  improvements: Improvement[];
+}
+
+function fmtVal(v: number, type: string): string {
+  if (type === "ping" || type === "jitter") return `${v.toFixed(1)} ms`;
+  if (type === "score") return `${Math.round(v)} pts`;
+  if (v > 1000) return `${(v / 1000).toFixed(2)} Gbps`;
+  return `${v.toFixed(1)} Mbps`;
+}
+
+function diffInfo(imp: Improvement) {
+  const { type, oldValue, newValue } = imp;
+  if (oldValue === newValue) return { label: "No change", color: "#8b5cf6", pct: 0, up: null };
+  const lowerIsBetter = type === "ping" || type === "jitter";
+  const delta   = lowerIsBetter ? oldValue - newValue : newValue - oldValue;
+  const pct     = oldValue !== 0 ? Math.abs((delta / oldValue) * 100) : 0;
+  const up      = delta > 0; // true = better
+  return {
+    label: `${up ? "▲" : "▼"} ${pct.toFixed(1)}%`,
+    color: up ? "#10b981" : "#ef4444",
+    pct,
+    up,
+  };
+}
+
+function metaFor(type: string): { icon: string; label: string; desc: (up: boolean | null) => string } {
+  switch (type) {
+    case "download": return { icon: "⬇️", label: "Download",  desc: u => u ? "Faster downloads & streaming!" : u === false ? "Slower downloads — check background apps." : "Perfectly consistent download speed." };
+    case "upload":   return { icon: "⬆️", label: "Upload",    desc: u => u ? "Better for video calls & uploads!" : u === false ? "Upload slowed — may affect video calls." : "Upload remains stable." };
+    case "ping":     return { icon: "📡", label: "Ping",      desc: u => u ? "Lower ping = faster response times!" : u === false ? "Higher ping may cause lag in games." : "Ping is rock-solid — very consistent." };
+    case "jitter":   return { icon: "📶", label: "Jitter",    desc: u => u ? "Less jitter = smoother streaming!" : u === false ? "More jitter may cause choppy video calls." : "Jitter unchanged — stable connection." };
+    case "score":    return { icon: "⭐", label: "Score",     desc: u => u ? "Overall quality improved!" : u === false ? "Overall quality dropped slightly." : "Score identical — consistent performance." };
+    default:         return { icon: "📊", label: type,        desc: _ => "" };
+  }
 }
 
 export default function ComparisonPopup({ isOpen, onClose, improvements }: ComparisonPopupProps) {
-  const [confetti, setConfetti] = useState<{ id: number; x: number; y: number; color: string }[]>([]);
+  const [confetti, setConfetti] = useState<{ id: number; x: number; color: string }[]>([]);
 
   useEffect(() => {
     if (isOpen) {
-      const newConfetti = [];
-      for (let i = 0; i < 100; i++) {
-        newConfetti.push({
+      setConfetti(
+        Array.from({ length: 60 }, (_, i) => ({
           id: i,
           x: Math.random() * 100,
-          y: Math.random() * 100,
-          color: Math.random() > 0.5 ? "#10b981" : "#3b82f6",
-        });
-      }
-      setConfetti(newConfetti);
+          color: ["#10b981","#3b82f6","#f59e0b","#8b5cf6","#38bdf8"][Math.floor(Math.random() * 5)],
+        }))
+      );
     }
   }, [isOpen]);
 
   if (!isOpen || !improvements || improvements.length === 0) return null;
 
-  const formatValue = (value: number, type: string) => {
-    if (type === "ping") return `${value.toFixed(1)} ms`;
-    if (type === "score") return `${value.toFixed(0)} points`;
-    if (value > 1000) return `${(value / 1000).toFixed(2)} Gbps`;
-    return `${value.toFixed(1)} Mbps`;
-  };
+  const improvedCount  = improvements.filter(i => diffInfo(i).up === true).length;
+  const declinedCount  = improvements.filter(i => diffInfo(i).up === false).length;
+  const unchangedCount = improvements.filter(i => diffInfo(i).up === null).length;
+  const total          = improvements.length;
 
-  const getRawValue = (value: number, type: string) => {
-    if (type === "ping") return `${value.toFixed(1)} ms`;
-    if (type === "score") return `${value.toFixed(0)} points`;
-    return `${value.toFixed(1)} Mbps`;
-  };
+  const overallMsg   = unchangedCount === total  ? "✨ Perfect consistency!"
+    : improvedCount > declinedCount              ? "🎉 Your connection improved!"
+    : declinedCount > improvedCount              ? "⚠️ Connection slowed down"
+    :                                             "📊 Mixed results";
+  const overallColor = unchangedCount === total  ? "#8b5cf6"
+    : improvedCount > declinedCount              ? "#10b981"
+    : declinedCount > improvedCount              ? "#ef4444"
+    :                                             "#f59e0b";
 
-  const getDifference = (oldValue: number, newValue: number, type: string) => {
-    if (oldValue === newValue) {
-      return { 
-        text: "✨ No change ✨", 
-        color: "#8b5cf6", 
-        icon: "✨", 
-        percent: 0,
-        description: "Your connection remains perfectly consistent!"
-      };
-    }
-    
-    let difference: number;
-    let percentChange: number;
-    
-    if (type === "ping") {
-      difference = oldValue - newValue;
-      percentChange = (difference / oldValue) * 100;
-    } else {
-      difference = newValue - oldValue;
-      percentChange = (difference / oldValue) * 100;
-    }
-    
-    const isImproved = (type === "ping" && difference > 0) || (type !== "ping" && difference > 0);
-    const absDiff = Math.abs(difference);
-    const absPercent = Math.abs(percentChange).toFixed(1);
-    
-    let formattedDiff = "";
-    if (type === "ping") {
-      formattedDiff = `${absDiff.toFixed(1)} ms`;
-    } else if (type === "score") {
-      formattedDiff = `${absDiff.toFixed(0)} points`;
-    } else {
-      if (absDiff > 1000) {
-        formattedDiff = `${(absDiff / 1000).toFixed(2)} Gbps`;
-      } else {
-        formattedDiff = `${absDiff.toFixed(1)} Mbps`;
-      }
-    }
-    
-    let description = "";
-    if (type === "ping") {
-      description = isImproved 
-        ? "Lower latency means better responsiveness for gaming and calls!"
-        : "Higher latency may cause lag in real-time applications.";
-    } else if (type === "score") {
-      description = isImproved
-        ? "Higher score means better overall connection quality!"
-        : "Lower score indicates degraded connection performance.";
-    } else {
-      description = isImproved
-        ? "Faster speeds mean better streaming, downloads, and uploads!"
-        : "Slower speeds may affect video quality and file transfers.";
-    }
-    
-    return {
-      text: isImproved 
-        ? `🚀 ${formattedDiff} FASTER (${absPercent}% improvement)` 
-        : `🐌 ${formattedDiff} SLOWER (${absPercent}% drop)`,
-      color: isImproved ? "#10b981" : "#ef4444",
-      icon: isImproved ? "🚀" : "🐌",
-      percent: percentChange,
-      description,
-    };
-  };
+  // Extra derived stats
+  const avgPctImprovement = improvements
+    .map(i => diffInfo(i))
+    .filter(d => d.up === true)
+    .reduce((sum, d, _, arr) => sum + d.pct / arr.length, 0);
 
-  const getIcon = (type: string) => {
-    switch (type) {
-      case "download": return "⬇️";
-      case "upload": return "⬆️";
-      case "ping": return "📡";
-      case "score": return "⭐";
-      default: return "📊";
-    }
-  };
-
-  const getLabel = (type: string) => {
-    switch (type) {
-      case "download": return "Download Speed";
-      case "upload": return "Upload Speed";
-      case "ping": return "Ping Latency";
-      case "score": return "Connection Score";
-      default: return type;
-    }
-  };
-
-  const getEmoji = (type: string, isImproved: boolean, isUnchanged: boolean) => {
-    if (isUnchanged) return "🎯";
-    if (type === "ping") return isImproved ? "⚡" : "🐢";
-    return isImproved ? "🚀" : "📉";
-  };
-
-  const improvedCount = improvements.filter(i => i.improved).length;
-  const declinedCount = improvements.filter(i => !i.improved && i.oldValue !== i.newValue).length;
-  const unchangedCount = improvements.filter(i => i.oldValue === i.newValue).length;
-
-  const getOverallMessage = () => {
-    if (unchangedCount === improvements.length) {
-      return "✨ Perfect consistency! All metrics unchanged! ✨";
-    }
-    if (improvedCount > declinedCount) {
-      return "🎉 Your connection is getting faster! Keep it up! 🎉";
-    }
-    if (declinedCount > improvedCount) {
-      return "⚠️ Your connection slowed down. Check your network! ⚠️";
-    }
-    return "📊 Mixed results - some things improved, some slowed down.";
-  };
-
-  const getOverallColor = () => {
-    if (unchangedCount === improvements.length) return "#8b5cf6";
-    if (improvedCount > declinedCount) return "#10b981";
-    if (declinedCount > improvedCount) return "#ef4444";
-    return "#f59e0b";
-  };
-
-  const getOverallEmoji = () => {
-    if (unchangedCount === improvements.length) return "✨";
-    if (improvedCount > declinedCount) return "🎉";
-    if (declinedCount > improvedCount) return "⚠️";
-    return "📊";
-  };
+  const stabilityScore = Math.round((unchangedCount / total) * 100);
 
   return (
     <div
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        background: "rgba(0,0,0,0.85)",
-        backdropFilter: "blur(8px)",
-        zIndex: 9999,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        animation: "fadeIn 0.2s ease",
-      }}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.82)", backdropFilter: "blur(8px)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", animation: "cpFadeIn 0.2s ease" }}
       onClick={onClose}
     >
-      {confetti.map((p) => (
-        <div
-          key={p.id}
-          style={{
-            position: "absolute",
-            left: `${p.x}%`,
-            top: `${p.y}%`,
-            width: "6px",
-            height: "6px",
-            background: p.color,
-            borderRadius: "2px",
-            animation: `confettiFall ${1 + Math.random() * 2}s linear forwards`,
-            pointerEvents: "none",
-          }}
-        />
+      {/* Confetti */}
+      {confetti.map(p => (
+        <div key={p.id} style={{ position: "absolute", left: `${p.x}%`, top: "-10px", width: 7, height: 7, background: p.color, borderRadius: 2, animation: `cpFall ${1.4 + Math.random() * 1.6}s linear forwards`, pointerEvents: "none" }} />
       ))}
 
       <div
-        style={{
-          background: "white",
-          borderRadius: "32px",
-          maxWidth: "450px",
-          width: "90%",
-          padding: "28px 20px",
-          textAlign: "center",
-          animation: "slideUp 0.3s ease",
-          boxShadow: "0 20px 40px rgba(0,0,0,0.3)",
-        }}
-        onClick={(e) => e.stopPropagation()}
+        style={{ background: "#fff", borderRadius: 28, maxWidth: 460, width: "92%", padding: "24px 18px 20px", textAlign: "center", animation: "cpSlideUp 0.3s ease", boxShadow: "0 24px 48px rgba(0,0,0,0.28)", maxHeight: "90vh", overflowY: "auto" }}
+        onClick={e => e.stopPropagation()}
       >
-        <div style={{ fontSize: "48px", marginBottom: "12px" }}>
-          {getOverallEmoji()}
+        {/* Header */}
+        <div style={{ fontSize: 44, marginBottom: 8 }}>
+          {unchangedCount === total ? "✨" : improvedCount > declinedCount ? "🎉" : declinedCount > improvedCount ? "⚠️" : "📊"}
+        </div>
+        <div style={{ fontSize: 19, fontWeight: 800, color: overallColor, marginBottom: 4 }}>{overallMsg}</div>
+        <div style={{ fontSize: 11, color: "#94a3b8", marginBottom: 16 }}>Compared to your previous test</div>
+
+        {/* Summary chips */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {improvedCount  > 0 && <span style={{ background: "#dcfce7", color: "#16a34a", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 600 }}>▲ {improvedCount} improved</span>}
+          {declinedCount  > 0 && <span style={{ background: "#fee2e2", color: "#dc2626", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 600 }}>▼ {declinedCount} declined</span>}
+          {unchangedCount > 0 && <span style={{ background: "#f3e8ff", color: "#7c3aed", borderRadius: 20, padding: "3px 12px", fontSize: 11, fontWeight: 600 }}>= {unchangedCount} unchanged</span>}
         </div>
 
-        <div
-          style={{
-            fontSize: "20px",
-            fontWeight: "bold",
-            marginBottom: "8px",
-            color: getOverallColor(),
-          }}
-        >
-          {getOverallMessage()}
+        {/* Extra stats row */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          {avgPctImprovement > 0 && (
+            <div style={{ flex: 1, background: "#f0fdf4", borderRadius: 12, padding: "8px 6px", border: "1px solid #bbf7d0" }}>
+              <div style={{ fontSize: 9, color: "#64748b" }}>Avg improvement</div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: "#10b981" }}>+{avgPctImprovement.toFixed(1)}%</div>
+            </div>
+          )}
+          <div style={{ flex: 1, background: "#f8fafc", borderRadius: 12, padding: "8px 6px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: 9, color: "#64748b" }}>Consistency</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: stabilityScore > 50 ? "#8b5cf6" : "#f59e0b" }}>{stabilityScore}%</div>
+          </div>
+          <div style={{ flex: 1, background: "#f8fafc", borderRadius: 12, padding: "8px 6px", border: "1px solid #e2e8f0" }}>
+            <div style={{ fontSize: 9, color: "#64748b" }}>Metrics tracked</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#3b82f6" }}>{total}</div>
+          </div>
         </div>
 
-        <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "20px" }}>
-          Compared to your previous test
-        </div>
-
-        <div style={{ background: "#f8fafc", borderRadius: "16px", padding: "12px", marginBottom: "20px", maxHeight: "400px", overflow: "auto" }}>
+        {/* Per-metric rows */}
+        <div style={{ background: "#f8fafc", borderRadius: 16, padding: "8px 12px", marginBottom: 16, textAlign: "left" }}>
           {improvements.map((imp, idx) => {
-            const isImproved = imp.improved;
-            const isUnchanged = imp.oldValue === imp.newValue;
-            const diff = getDifference(imp.oldValue, imp.newValue, imp.type);
-            const emoji = getEmoji(imp.type, isImproved, isUnchanged);
-            
+            const d    = diffInfo(imp);
+            const meta = metaFor(imp.type);
             return (
-              <div
-                key={idx}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  padding: "12px 0",
-                  borderBottom: idx < improvements.length - 1 ? "1px solid #e2e8f0" : "none",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "24px" }}>{getIcon(imp.type)}</span>
-                    <div style={{ textAlign: "left" }}>
-                      <div style={{ fontWeight: "600", color: "#1e293b", fontSize: "14px" }}>{getLabel(imp.type)}</div>
-                      <div style={{ fontSize: "10px", color: "#64748b" }}>
-                        Previous: {getRawValue(imp.oldValue, imp.type)}
-                      </div>
+              <div key={idx} style={{ padding: "10px 0", borderBottom: idx < improvements.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+                {/* Top row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 22 }}>{meta.icon}</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>{meta.label}</div>
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>was {fmtVal(imp.oldValue, imp.type)}</div>
                     </div>
                   </div>
-                  
                   <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "18px", fontWeight: "bold", color: isUnchanged ? "#8b5cf6" : isImproved ? "#10b981" : "#ef4444" }}>
-                      {formatValue(imp.newValue, imp.type)}
+                    <div style={{ fontSize: 17, fontWeight: 800, color: d.up === null ? "#8b5cf6" : d.up ? "#10b981" : "#ef4444" }}>
+                      {fmtVal(imp.newValue, imp.type)}
                     </div>
-                    {!isUnchanged && (
-                      <div style={{ fontSize: "11px", color: diff.color, display: "flex", alignItems: "center", gap: "4px", justifyContent: "flex-end" }}>
-                        <span>{emoji}</span> {diff.text}
-                      </div>
-                    )}
+                    <div style={{ fontSize: 11, fontWeight: 600, color: d.color }}>{d.label}</div>
                   </div>
                 </div>
-                
-                {/* Description for each metric - Show even when unchanged */}
-                <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px", paddingLeft: "34px" }}>
-                  {isUnchanged ? (
-                    <span>🎯 Same as before! Your connection is very stable and consistent.</span>
-                  ) : (
-                    <span>{diff.description}</span>
-                  )}
-                </div>
+                {/* Mini bar */}
+                {d.up !== null && (
+                  <div style={{ marginTop: 5, height: 4, background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${Math.min(100, d.pct)}%`, background: d.up ? "#10b981" : "#ef4444", borderRadius: 4, transition: "width 0.6s ease" }} />
+                  </div>
+                )}
+                {/* Description */}
+                <div style={{ fontSize: 10, color: "#64748b", marginTop: 4 }}>{meta.desc(d.up)}</div>
               </div>
             );
           })}
         </div>
 
-        {/* Add a fun fact when all metrics are the same */}
-        {improvements.every(i => i.oldValue === i.newValue) && (
-          <div style={{ 
-            marginBottom: "16px", 
-            padding: "10px", 
-            background: "#f3e8ff", 
-            borderRadius: "12px",
-            fontSize: "11px",
-            color: "#6b21a8"
-          }}>
-            🤔 Fun fact: Getting identical speeds twice in a row is incredibly rare! 
-            Your connection is remarkably consistent.
+        {/* All-same fun fact */}
+        {unchangedCount === total && (
+          <div style={{ marginBottom: 14, padding: 10, background: "#f3e8ff", borderRadius: 12, fontSize: 11, color: "#6b21a8" }}>
+            🤔 Getting identical speeds twice in a row is incredibly rare — your connection is remarkably consistent!
           </div>
         )}
 
         <button
           onClick={onClose}
-          style={{
-            width: "100%",
-            padding: "12px",
-            background: "linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)",
-            color: "#fff",
-            border: "none",
-            borderRadius: "40px",
-            cursor: "pointer",
-            fontSize: "14px",
-            fontWeight: "600",
-            transition: "transform 0.2s",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = "scale(1.02)";
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = "scale(1)";
-          }}
+          style={{ width: "100%", padding: 13, background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", color: "#fff", border: "none", borderRadius: 40, cursor: "pointer", fontSize: 14, fontWeight: 700 }}
+          onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.02)"; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
         >
-          Got it
+          Got it! 👍
         </button>
       </div>
 
       <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(30px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-        @keyframes confettiFall {
-          0% {
-            transform: translateY(0) rotate(0deg);
-            opacity: 1;
-          }
-          100% {
-            transform: translateY(100vh) rotate(360deg);
-            opacity: 0;
-          }
-        }
+        @keyframes cpFadeIn  { from { opacity:0; }                              to { opacity:1; }                           }
+        @keyframes cpSlideUp { from { opacity:0; transform:translateY(28px); } to { opacity:1; transform:translateY(0); }  }
+        @keyframes cpFall    { 0%   { transform:translateY(0) rotate(0deg);  opacity:1; }
+                               100% { transform:translateY(110vh) rotate(360deg); opacity:0; } }
       `}</style>
     </div>
   );

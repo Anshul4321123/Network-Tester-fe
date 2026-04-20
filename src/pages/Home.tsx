@@ -41,9 +41,8 @@ const SMART_PRIORITY: Record<SmartPopupType, number> = {
 // ─────────────────────────────────────────────────────────────
 // Post-test popup chain
 // Sequence: highscore → comparison → smart (one only)
-// Each stage calls advanceChain() when it closes.
 // ─────────────────────────────────────────────────────────────
-type ChainStage = "highscore" | "comparison" | "smart" | "done";
+
 
 // ─────────────────────────────────────────────────────────────
 // High-score detection helpers
@@ -271,30 +270,14 @@ function NetworkSelector({ networkName, setNetworkName, savedNetworks, setSavedN
         </div>
       )}
       {showAdd && (
-  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAdd(false)}>
-    <div style={{ background: "white", borderRadius: 16, padding: 20, width: 280 }} onClick={e => e.stopPropagation()}>
-      <h4 style={{ marginBottom: 12, color: "#1e293b" }}>Add Network</h4>
-      <p style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>Add a custom name for your Network.</p>
-      <p style={{ fontSize: 11, color: "#64748b", marginBottom: 12 }}>
-        Press <span style={{ color: "#3b82f6", fontWeight: "500", background: "#eff6ff", padding: "2px 6px", borderRadius: 4 }}>🪟 + .</span> to add emoji for better context
-      </p>
-      <input 
-        type="text" 
-        value={newName} 
-        onChange={e => setNewName(e.target.value)} 
-        placeholder="e.g., 🏠 Home WiFi" 
-        style={{ width: "100%", padding: 8, marginBottom: 12, border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13, color: "#1e293b" }} 
-        autoFocus 
-      />
-      <button 
-        onClick={add} 
-        style={{ width: "100%", padding: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 500 }}
-      >
-        Add Network
-      </button>
-    </div>
-  </div>
-)}
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setShowAdd(false)}>
+          <div style={{ background: "white", borderRadius: 16, padding: 20, width: 280 }} onClick={e => e.stopPropagation()}>
+            <h4 style={{ marginBottom: 12 }}>Add Network</h4>
+            <input type="text" value={newName} onChange={e => setNewName(e.target.value)} placeholder="Network name" style={{ width: "100%", padding: 8, marginBottom: 12, border: "1px solid #e2e8f0", borderRadius: 8 }} autoFocus />
+            <button onClick={add} style={{ width: "100%", padding: 8, background: "#10b981", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>Add</button>
+          </div>
+        </div>
+      )}
       {delConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setDelConfirm(null)}>
           <div style={{ background: "white", borderRadius: 16, padding: 20, width: 260, textAlign: "center" }} onClick={e => e.stopPropagation()}>
@@ -334,24 +317,24 @@ export default function Home() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [showPingScanner, setShowPingScanner] = useState(false);
 
-  // ── Post-test popup chain state ───────────────────────────────
-  // Tracks where we are in: highscore → comparison → smart → done
-  const [chainStage, setChainStage]     = useState<ChainStage>("done");
+  // ── Post-test popup chain ─────────────────────────────────────
+  // All popups go through a single queue. showNextInQueue() is called
+  // when the currently-visible popup closes. Nothing fires in parallel.
 
-  // HighScore popup
-  const [highScorePopup, setHighScorePopup] = useState<{ show: boolean; records: HighScoreRecord[] }>({ show: false, records: [] });
+  type QueueItem =
+    | { kind: "celebration"; records: any[]; isFirstTime: boolean; firstTimeType: string }
+    | { kind: "highscore";   records: HighScoreRecord[] }
+    | { kind: "comparison";  improvements: any[] }
+    | { kind: "smart";       type: SmartPopupType; data?: any };
 
-  // Comparison popup (existing)
+  const popupQueueRef = useRef<QueueItem[]>([]);
+  const popupBusyRef  = useRef(false); // true while a popup is visible
+
+  // Active popup state — only one is ever truthy at a time
+  const [celebration,     setCelebration]     = useState<any>(null);
+  const [highScorePopup,  setHighScorePopup]  = useState<{ show: boolean; records: HighScoreRecord[] }>({ show: false, records: [] });
   const [comparisonPopup, setComparisonPopup] = useState<any>(null);
-
-  // CelebrationPopup (first-time achievements — shown independently, not in main chain)
-  const [celebration, setCelebration]   = useState<any>(null);
-
-  // Smart redirect popup (one only per test, no auto-dismiss)
-  const [smartPopup, setSmartPopup]     = useState<{ isOpen: boolean; type: SmartPopupType; data?: any }>({ isOpen: false, type: "high-latency" });
-  const pendingSmartRef                 = useRef<PendingSmartPopup[]>([]);
-  const pendingComparisonRef            = useRef<any>(null);   // hold comparison data until chain reaches it
-  const pendingSmartCandidatesRef       = useRef<PendingSmartPopup[]>([]); // hold smart candidates
+  const [smartPopup,      setSmartPopup]      = useState<{ isOpen: boolean; type: SmartPopupType; data?: any }>({ isOpen: false, type: "try-tools" });
 
   const [hasSeenFeaturePopup, setHasSeenFeaturePopup] = useState(
     () => localStorage.getItem("has_seen_ping_feature") === "true"
@@ -366,87 +349,70 @@ export default function Home() {
 
   const serverWarmedUp = useServerWarmup();
 
-  // ── Chain advancement ─────────────────────────────────────────
-  // Called when any popup in the chain closes.
-  // Advances to the next stage in order.
-  const advanceChain = (fromStage: ChainStage) => {
-    if (fromStage === "highscore") {
-      // Next: comparison (if any)
-      const comp = pendingComparisonRef.current;
-      if (comp) {
-        pendingComparisonRef.current = null;
-        setTimeout(() => {
-          setComparisonPopup({ show: true, improvements: comp.improvements });
-          setChainStage("comparison");
-        }, 350);
-      } else {
-        advanceChain("comparison"); // skip comparison
-      }
-    } else if (fromStage === "comparison") {
-      // Next: smart redirect (one only, highest priority)
-      const candidates = pendingSmartCandidatesRef.current;
-      pendingSmartCandidatesRef.current = [];
-      if (candidates.length > 0) {
-        candidates.sort((a, b) => a.priority - b.priority);
-        const first = candidates[0];
-        setTimeout(() => {
-          setSmartPopup({ isOpen: true, type: first.type, data: first.data });
-          setChainStage("smart");
-        }, 350);
-      } else {
-        setChainStage("done");
-      }
-    } else {
-      setChainStage("done");
+  // ── Queue-based popup system ─────────────────────────────────
+  // showNextInQueue: dequeues one item and sets the right state.
+  // Called on mount (no-op if queue empty) and after each popup closes.
+  const showNextInQueue = () => {
+    if (popupQueueRef.current.length === 0) {
+      popupBusyRef.current = false;
+      return;
     }
+    popupBusyRef.current = true;
+    const item = popupQueueRef.current.shift()!;
+    // Small gap so closing animation finishes before next opens
+    setTimeout(() => {
+      if (item.kind === "celebration") {
+        setCelebration({ show: true, records: item.records, isFirstTime: item.isFirstTime, firstTimeType: item.firstTimeType });
+      } else if (item.kind === "highscore") {
+        setHighScorePopup({ show: true, records: item.records });
+      } else if (item.kind === "comparison") {
+        setComparisonPopup({ show: true, improvements: item.improvements });
+      } else if (item.kind === "smart") {
+        setSmartPopup({ isOpen: true, type: item.type, data: item.data });
+      }
+    }, 380);
   };
 
-  // ── Save test result + build popup chain ──────────────────────
+  // ── Save test result + build popup queue ────────────────────
   useEffect(() => {
     if (phase !== "complete" || score === null || download === null || upload === null || ping === null) return;
-    const testId = `${score}-${download}-${upload}-${ping}-${Date.now()}`;
+    // Deduplicate: same result values → already processed
+    const testId = `${Math.round(score)}-${Math.round(download)}-${Math.round(upload)}-${Math.round(ping)}`;
     if (lastProcessedTestId === testId) return;
-    if (running) { setCelebration(null); setComparisonPopup(null); setLastProcessedTestId(""); return; }
+    if (running) return;
 
     const currentAchievements = getAchievements();
-    const testNetworkName = localStorage.getItem("test_network_name");
+    const testNetworkName  = localStorage.getItem("test_network_name");
     const finalNetworkName = testNetworkName || networkName || "Home Network";
     const finalNetworkType = networkType || "unknown";
     localStorage.removeItem("test_network_name");
     localStorage.removeItem("test_start_time");
 
-    // ── 1. Detect high scores BEFORE saving, so we compare against old best ──
+    // 1. Detect high scores BEFORE saving (compare against old best)
     const hsRecords = detectHighScores(score, download, upload, ping);
 
-    // ── 2. Save results ──
-    const testResult: SpeedTestRecord = {
-      date: new Date().toLocaleString(), ping, jitter: jitter || 0, download, upload, score,
-      networkName: finalNetworkName, networkType: finalNetworkType, hour: new Date().getHours(),
-    };
-    saveResult(testResult);
+    // 2. Save result
+    saveResult({ date: new Date().toLocaleString(), ping, jitter: jitter || 0, download, upload, score, networkName: finalNetworkName, networkType: finalNetworkType, hour: new Date().getHours() });
     saveBestScore(score);
     saveBestStats(score, download, upload, ping);
-    save5dBest(score, download, upload, ping); // update 5-day rolling best
+    save5dBest(score, download, upload, ping);
 
-    // ── 3. Build comparison data ──
+    // 3. Comparison data (only when 2+ tests exist)
     const historyList = getHistory();
-    let compData: any = null;
+    let compImprovements: any[] | null = null;
     if (historyList.length >= 2) {
       const prev = historyList[1], curr = historyList[0];
-      compData = {
-        improvements: [
-          { type: "download", oldValue: prev.download, newValue: curr.download, improved: curr.download > prev.download },
-          { type: "upload",   oldValue: prev.upload,   newValue: curr.upload,   improved: curr.upload   > prev.upload   },
-          { type: "ping",     oldValue: prev.ping,     newValue: curr.ping,     improved: curr.ping     < prev.ping     },
-          { type: "score",    oldValue: prev.score,    newValue: curr.score,    improved: curr.score    > prev.score    },
-        ],
-      };
+      compImprovements = [
+        { type: "download", oldValue: prev.download,       newValue: curr.download,       improved: curr.download > prev.download },
+        { type: "upload",   oldValue: prev.upload,         newValue: curr.upload,         improved: curr.upload   > prev.upload   },
+        { type: "ping",     oldValue: prev.ping,           newValue: curr.ping,           improved: curr.ping     < prev.ping     },
+        { type: "jitter",   oldValue: prev.jitter || 0,    newValue: curr.jitter || 0,    improved: (curr.jitter || 0) < (prev.jitter || 0) },
+        { type: "score",    oldValue: prev.score,          newValue: curr.score,          improved: curr.score    > prev.score    },
+      ];
     }
 
-    // ── 4. Build smart-redirect candidates (highest priority wins; try-tools is always the fallback) ──
+    // 4. Smart-redirect candidate (highest priority wins; try-tools is always present)
     const smartCandidates: PendingSmartPopup[] = [];
-
-    // High-latency: ping > 100ms and not shown in the last hour
     if (ping > 100) {
       const lastShown = localStorage.getItem("last_latency_popup");
       const now = Date.now();
@@ -455,28 +421,26 @@ export default function Home() {
         localStorage.setItem("last_latency_popup", now.toString());
       }
     }
-    // History: first time after 3+ tests
     if (historyList.length >= 3 && !localStorage.getItem("has_seen_history_popup")) {
       smartCandidates.push({ priority: SMART_PRIORITY["history"], type: "history", data: { testCount: historyList.length } });
       localStorage.setItem("has_seen_history_popup", "true");
     }
-    // Feature highlight: first time only
     if (!hasSeenFeaturePopup) {
       smartCandidates.push({ priority: SMART_PRIORITY["feature-highlight"], type: "feature-highlight", data: { featureName: "Live Ping Scanner" } });
       setHasSeenFeaturePopup(true);
       localStorage.setItem("has_seen_ping_feature", "true");
     }
-    // ── Try-tools: ALWAYS shown (fallback when nothing else qualifies, but also present every time).
-    // Sort puts higher-priority items first; try-tools priority=5 so it only shows if nothing more urgent exists.
-    // We always push it so the smart popup ALWAYS fires after comparison.
+    // try-tools always present as ultimate fallback
     smartCandidates.push({ priority: SMART_PRIORITY["try-tools"], type: "try-tools", data: {} });
+    smartCandidates.sort((a, b) => a.priority - b.priority);
+    const smartItem = smartCandidates[0]; // one popup, highest priority
 
-    // ── 5. First-time achievement celebration (independent — shown immediately, not chained) ──
+    // 5. First-time achievements
     const newAchievements: { type: string; value: number }[] = [];
-    if (!currentAchievements.hasRunPing     && ping > 0)                       { newAchievements.push({ type: "ping",     value: ping });     updateAchievement("ping");     }
-    if (!currentAchievements.hasRunJitter   && jitter !== null && jitter >= 0) { newAchievements.push({ type: "jitter",   value: jitter });   updateAchievement("jitter");   }
-    if (!currentAchievements.hasRunDownload && download > 0)                   { newAchievements.push({ type: "download", value: download }); updateAchievement("download"); }
-    if (!currentAchievements.hasRunUpload   && upload > 0)                     { newAchievements.push({ type: "upload",   value: upload });   updateAchievement("upload");   }
+    if (!currentAchievements.hasRunPing     && ping > 0)                        { newAchievements.push({ type: "ping",     value: ping });     updateAchievement("ping");     }
+    if (!currentAchievements.hasRunJitter   && jitter !== null && jitter >= 0)  { newAchievements.push({ type: "jitter",   value: jitter });   updateAchievement("jitter");   }
+    if (!currentAchievements.hasRunDownload && download > 0)                    { newAchievements.push({ type: "download", value: download }); updateAchievement("download"); }
+    if (!currentAchievements.hasRunUpload   && upload > 0)                      { newAchievements.push({ type: "upload",   value: upload });   updateAchievement("upload");   }
 
     setBestScore(getBestScore());
     setBestStats(getBestStats());
@@ -484,38 +448,41 @@ export default function Home() {
     setAchievements(getAchievements());
     setLastProcessedTestId(testId);
 
-    // ── 6. Launch popup chain ──────────────────────────────────
-    // Store comparison and smart candidates for advanceChain() to consume
-    pendingComparisonRef.current       = compData;
-    pendingSmartCandidatesRef.current  = smartCandidates;
+    // 6. Build the queue in order: celebration → highscore → comparison → smart
+    //    Each item only shows after the previous one closes.
+    const queue: any[] = [];
 
-    // CelebrationPopup fires independently (first-time achievement, very rare)
     if (newAchievements.length > 0) {
-      const records = newAchievements.map(a => ({ type: a.type === "jitter" ? "ping" : a.type, oldValue: a.value, newValue: a.value }));
-      setCelebration({ show: true, records, isFirstTime: true, firstTimeType: newAchievements[0]?.type });
-      // Don't start main chain yet — wait for celebration to close? Actually celebration is separate, let chain start normally.
+      queue.push({
+        kind: "celebration",
+        records: newAchievements.map(a => ({ type: a.type === "jitter" ? "ping" : a.type, oldValue: a.value, newValue: a.value })),
+        isFirstTime: true,
+        firstTimeType: newAchievements[0]?.type,
+      });
     }
+    if (hsRecords.length > 0) {
+      queue.push({ kind: "highscore", records: hsRecords });
+    }
+    if (compImprovements) {
+      queue.push({ kind: "comparison", improvements: compImprovements });
+    }
+    queue.push({ kind: "smart", type: smartItem.type, data: smartItem.data });
 
-    // Start chain: show HighScore first (if any records broken)
-    setTimeout(() => {
-      if (hsRecords.length > 0) {
-        setHighScorePopup({ show: true, records: hsRecords });
-        setChainStage("highscore");
-      } else {
-        // No high score — skip to comparison
-        advanceChain("highscore");
-      }
-    }, 800);
+    // Reset all popup state before starting (clear any stale state from previous test)
+    setCelebration(null);
+    setHighScorePopup({ show: false, records: [] });
+    setComparisonPopup(null);
+    setSmartPopup({ isOpen: false, type: "try-tools" });
 
-  }, [phase, score, download, upload, ping, jitter, networkType, running]);
+    popupQueueRef.current = queue;
+    popupBusyRef.current  = false;
 
-  // ── Smart popup drain (for any leftovers from previous sessions) ──
-  const drainSmartQueue = () => {
-    if (pendingSmartRef.current.length === 0) return;
-    const [next, ...rest] = pendingSmartRef.current;
-    pendingSmartRef.current = rest;
-    setTimeout(() => setSmartPopup({ isOpen: true, type: next.type, data: next.data }), 400);
-  };
+    // Start the chain after a short delay so the results UI renders first
+    setTimeout(showNextInQueue, 900);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+  // ↑ Only [phase] — we want this to fire once per test completion cycle.
 
   // ── Smart popup action handler ────────────────────────────────
   const handleSmartPopupAction = (action: string) => {
@@ -649,47 +616,45 @@ export default function Home() {
         <FooterMessage />
       </div>
 
-      {/* ── Popup chain: HighScore → Comparison → SmartRedirect ── */}
+      {/* ── Sequential popup chain ─────────────────────────────────
+           Order: Celebration → HighScore → Comparison → SmartRedirect
+           Each popup calls showNextInQueue() on close so they never overlap. ── */}
 
-      {/* Stage 1: High Score */}
+      {/* 1. First-time achievement celebration */}
+      {celebration?.show && (
+        <CelebrationPopup
+          isOpen={celebration.show}
+          onClose={() => { setCelebration(null); showNextInQueue(); }}
+          records={celebration.records}
+          isFirstTime={celebration.isFirstTime}
+          firstTimeType={celebration.firstTimeType}
+        />
+      )}
+
+      {/* 2. High Score */}
       <HighScorePopup
         isOpen={highScorePopup.show}
         records={highScorePopup.records}
-        onClose={() => {
-          setHighScorePopup({ show: false, records: [] });
-          advanceChain("highscore");
-        }}
+        onClose={() => { setHighScorePopup({ show: false, records: [] }); showNextInQueue(); }}
       />
 
-      {/* Stage 2: Comparison */}
+      {/* 3. Comparison */}
       {comparisonPopup?.show && (
         <ComparisonPopup
           isOpen={comparisonPopup.show}
-          onClose={() => {
-            setComparisonPopup(null);
-            if (chainStage === "comparison") advanceChain("comparison");
-          }}
+          onClose={() => { setComparisonPopup(null); showNextInQueue(); }}
           improvements={comparisonPopup.improvements}
         />
       )}
 
-      {/* Stage 3: Smart redirect — one only, no auto-dismiss */}
+      {/* 4. Smart redirect */}
       <SmartRedirectPopup
         isOpen={smartPopup.isOpen}
-        onClose={() => {
-          setSmartPopup({ isOpen: false, type: "high-latency" });
-          setChainStage("done");
-          drainSmartQueue();
-        }}
+        onClose={() => { setSmartPopup({ isOpen: false, type: "try-tools" }); showNextInQueue(); }}
         onAction={handleSmartPopupAction}
         type={smartPopup.type}
         data={smartPopup.data}
       />
-
-      {/* Independent: first-time achievement celebration */}
-      {celebration?.show && (
-        <CelebrationPopup isOpen={celebration.show} onClose={() => setCelebration(null)} records={celebration.records} isFirstTime={celebration.isFirstTime} firstTimeType={celebration.firstTimeType} />
-      )}
 
       {/* Other */}
       <PingScanner isOpen={showPingScanner} onClose={() => setShowPingScanner(false)} />
