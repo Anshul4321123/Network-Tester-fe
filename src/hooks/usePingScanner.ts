@@ -1,192 +1,154 @@
-// hooks/usePingScanner.ts - FIXED to match speed test accuracy
+// hooks/usePingScanner.ts
+// Slot-based scheduler: fires exactly floor(duration/interval) requests,
+// one per slot, regardless of server latency.
+// Each measurement is ONE averaged result from PING_SAMPLES parallel fetches.
 import { useState, useRef, useCallback } from "react";
 
 const BASE_URL = import.meta.env.VITE_BASE_URL;
 
-interface UsePingScannerReturn {
-  isRunning: boolean;
-  pings: number[];
+// Number of parallel requests per measurement (averaged for accuracy)
+const PING_SAMPLES = 3;
+
+export interface UsePingScannerReturn {
+  isRunning:   boolean;
+  // newPing emits a single new value each measurement (not the whole array)
+  newPing:     number | null;
   currentPing: number | null;
-  bestPing: number | null;
+  bestPing:    number | null;
   averagePing: number | null;
-  stability: "stable" | "moderate" | "unstable";
+  stability:   "stable" | "moderate" | "unstable";
+  totalCount:  number; // how many measurements have fired so far
   start: (duration: number, interval: number) => void;
-  stop: () => void;
+  stop:  () => void;
   reset: () => void;
 }
 
-// Same ping test method as useSpeedTest
-const PING_SAMPLES = 5; // Fewer samples for faster response, but still accurate
-
 export function usePingScanner(): UsePingScannerReturn {
-  const [isRunning, setIsRunning] = useState(false);
-  const [pings, setPings] = useState<number[]>([]);
-  const [currentPing, setCurrentPing] = useState<number | null>(null);
-  const [bestPing, setBestPing] = useState<number | null>(null);
-  const [averagePing, setAveragePing] = useState<number | null>(null);
-  const [stability, setStability] = useState<"stable" | "moderate" | "unstable">("stable");
-  
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFirstPingRef = useRef(true);
-  const startTimeRef = useRef<number>(0);
-  const isRunningRef = useRef(false);
+  const [isRunning,    setIsRunning]    = useState(false);
+  const [newPing,      setNewPing]      = useState<number | null>(null);
+  const [currentPing,  setCurrentPing]  = useState<number | null>(null);
+  const [bestPing,     setBestPing]     = useState<number | null>(null);
+  const [averagePing,  setAveragePing]  = useState<number | null>(null);
+  const [stability,    setStability]    = useState<"stable" | "moderate" | "unstable">("stable");
+  const [totalCount,   setTotalCount]   = useState(0);
 
-  const calculateStats = useCallback((pingList: number[]) => {
-    if (pingList.length === 0) return;
-    
-    const best = Math.min(...pingList);
-    setBestPing(Math.round(best * 100) / 100);
-    
-    const avg = pingList.reduce((a, b) => a + b, 0) / pingList.length;
-    setAveragePing(Math.round(avg * 100) / 100);
-    
-    if (pingList.length > 1) {
-      const variance = pingList.reduce((acc, val) => acc + Math.pow(val - avg, 2), 0) / pingList.length;
-      const stdDev = Math.sqrt(variance);
-      const cv = stdDev / avg;
-      
-      if (cv < 0.15) {
-        setStability("stable");
-      } else if (cv < 0.3) {
-        setStability("moderate");
-      } else {
-        setStability("unstable");
-      }
-    }
-  }, []);
+  // Internal accumulator — never exposed as state (avoids the double-append bug)
+  const allPingsRef     = useRef<number[]>([]);
+  const isRunningRef    = useRef(false);
+  const slotTimersRef   = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // Helper: fetch with cache busting (same as useSpeedTest)
-  const fetchWithCacheBust = (url: string) => {
-    const bustedUrl = url.includes('?') ? `${url}&_=${Date.now()}` : `${url}?_=${Date.now()}`;
-    return fetch(bustedUrl, { cache: 'no-store' });
-  };
+  // ── Single measurement: PING_SAMPLES parallel fetches, average the results ──
+  const measure = useCallback(async (): Promise<number | null> => {
+    const url = BASE_URL.includes("?")
+      ? `${BASE_URL}/ping&_=${Date.now()}`
+      : `${BASE_URL}/ping?_=${Date.now()}`;
 
-  // Accurate ping test with multiple samples and outlier removal
-  const performAccuratePing = useCallback(async (): Promise<number | null> => {
-    const samples: number[] = [];
+    const promises = Array.from({ length: PING_SAMPLES }, () => {
+      const t0 = performance.now();
+      return fetch(url, { cache: "no-store" })
+        .then(() => performance.now() - t0)
+        .catch(() => null);
+    });
 
-    for (let i = 0; i < PING_SAMPLES; i++) {
-      const start = performance.now();
-      try {
-        await fetchWithCacheBust(`${BASE_URL}/ping`);
-        const latency = performance.now() - start;
-        samples.push(latency);
-      } catch (error) {
-        console.warn(`Ping attempt ${i + 1} failed:`, error);
-      }
-      if (i < PING_SAMPLES - 1) await new Promise(resolve => setTimeout(resolve, 50));
-    }
+    const results = await Promise.all(promises);
+    const valid   = results.filter((v): v is number => v !== null);
 
-    if (samples.length < PING_SAMPLES / 2) {
-      return null;
-    }
+    if (valid.length === 0) return null;
 
-    // Remove outliers (trim 20% from both ends) - same as speed test
-    const sorted = [...samples].sort((a, b) => a - b);
-    const trimStart = Math.floor(sorted.length * 0.2);
-    const trimEnd = Math.floor(sorted.length * 0.8);
-    const trimmed = sorted.slice(trimStart, trimEnd);
-    const avg = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-    
+    // Drop the highest outlier when we have 3+ samples
+    const sorted   = [...valid].sort((a, b) => a - b);
+    const trimmed  = sorted.length >= 3 ? sorted.slice(0, -1) : sorted;
+    const avg      = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
     return +avg.toFixed(2);
   }, []);
 
-  const runSinglePing = useCallback(async () => {
-    if (!isRunningRef.current) return;
-    
-    const latency = await performAccuratePing();
-    
-    if (latency !== null) {
-      if (!isFirstPingRef.current) {
-        setPings(prev => {
-          const newPings = [...prev, latency];
-          const limited = newPings.slice(-100);
-          setCurrentPing(latency);
-          calculateStats(limited);
-          return limited;
-        });
-      } else {
-        isFirstPingRef.current = false;
-        setCurrentPing(latency);
-      }
-    }
-  }, [performAccuratePing, calculateStats]);
+  // ── Update derived stats ───────────────────────────────────────────────────
+  const updateStats = useCallback((list: number[]) => {
+    if (list.length === 0) return;
+    const best = Math.min(...list);
+    const avg  = list.reduce((a, b) => a + b, 0) / list.length;
+    setBestPing(+best.toFixed(2));
+    setAveragePing(+avg.toFixed(2));
 
-  const start = useCallback((duration: number, interval: number) => {
-    // Stop any existing scan
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
+    if (list.length > 1) {
+      const variance = list.reduce((acc, v) => acc + (v - avg) ** 2, 0) / list.length;
+      const cv       = Math.sqrt(variance) / avg;
+      setStability(cv < 0.15 ? "stable" : cv < 0.3 ? "moderate" : "unstable");
     }
-    
-    // Reset state
+  }, []);
+
+  // ── start: schedule exactly N = floor(duration/interval) slots ────────────
+  const start = useCallback((duration: number, interval: number) => {
+    // Clear any existing timers
+    slotTimersRef.current.forEach(clearTimeout);
+    slotTimersRef.current = [];
+
+    // Reset everything
+    allPingsRef.current = [];
     setIsRunning(true);
     isRunningRef.current = true;
-    setPings([]);
+    setNewPing(null);
     setCurrentPing(null);
     setBestPing(null);
     setAveragePing(null);
     setStability("stable");
-    isFirstPingRef.current = true;
-    startTimeRef.current = Date.now();
-    
-    const endTime = startTimeRef.current + duration;
-    
-    const scheduleNextPing = async () => {
-      if (!isRunningRef.current) return;
-      
-      const now = Date.now();
-      if (now >= endTime) {
-        // Scan complete
+    setTotalCount(0);
+
+    const slotCount = Math.floor(duration / interval); // e.g. 30000/2000 = 15
+
+    for (let i = 0; i < slotCount; i++) {
+      const fireAt = i * interval; // slot 0 fires at 0ms, slot 1 at 2000ms, …
+
+      const t = setTimeout(async () => {
+        if (!isRunningRef.current) return;
+
+        const latency = await measure();
+        if (latency === null || !isRunningRef.current) return;
+
+        allPingsRef.current = [...allPingsRef.current, latency];
+
+        setNewPing(latency);       // single new value — component appends this
+        setCurrentPing(latency);
+        setTotalCount(allPingsRef.current.length);
+        updateStats(allPingsRef.current);
+
+        // Last slot → mark complete
+        if (i === slotCount - 1) {
+          setIsRunning(false);
+          isRunningRef.current = false;
+        }
+      }, fireAt);
+
+      slotTimersRef.current.push(t);
+    }
+
+    // Safety: stop after duration + 500ms buffer in case the last slot is slow
+    const endTimer = setTimeout(() => {
+      if (isRunningRef.current) {
         setIsRunning(false);
         isRunningRef.current = false;
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
-          timeoutRef.current = null;
-        }
-        return;
       }
-      
-      // Run the accurate ping
-      await runSinglePing();
-      
-      // Schedule next ping
-      timeoutRef.current = setTimeout(scheduleNextPing, interval);
-    };
-    
-    // Start the first ping
-    scheduleNextPing();
-  }, [runSinglePing]);
+    }, duration + 500);
+    slotTimersRef.current.push(endTimer);
+  }, [measure, updateStats]);
 
   const stop = useCallback(() => {
+    slotTimersRef.current.forEach(clearTimeout);
+    slotTimersRef.current = [];
     setIsRunning(false);
     isRunningRef.current = false;
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
   }, []);
 
   const reset = useCallback(() => {
     stop();
-    setPings([]);
+    allPingsRef.current = [];
+    setNewPing(null);
     setCurrentPing(null);
     setBestPing(null);
     setAveragePing(null);
     setStability("stable");
-    isFirstPingRef.current = true;
-    startTimeRef.current = 0;
+    setTotalCount(0);
   }, [stop]);
 
-  return {
-    isRunning,
-    pings,
-    currentPing,
-    bestPing,
-    averagePing,
-    stability,
-    start,
-    stop,
-    reset,
-  };
+  return { isRunning, newPing, currentPing, bestPing, averagePing, stability, totalCount, start, stop, reset };
 }
