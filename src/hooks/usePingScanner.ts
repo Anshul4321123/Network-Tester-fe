@@ -1,104 +1,118 @@
 // hooks/usePingScanner.ts
-// Slot-based scheduler: fires exactly floor(duration/interval) requests,
-// one per slot, regardless of server latency.
-// Each measurement is ONE averaged result from PING_SAMPLES parallel fetches.
+//
+// Slot-based scheduler: pre-computes exactly N = floor(duration/interval) fire times
+// at the start. Each slot fires independently — server latency cannot add extra slots.
+//
+// Key design decisions:
+//   • slotIndex is emitted alongside each ping so the component can reconstruct
+//     perfect wall-clock labels (startTime + slotIndex * interval) with no jitter.
+//   • PING_SAMPLES parallel fetches are averaged per slot for accuracy.
+//   • The last slot fires at (N-1)*interval. For 30s/2s that is slot 14 → 28s.
+//     This is correct: 15 slots × 2s = 30s of coverage (0,2,4,...28 = 15 points).
 import { useState, useRef, useCallback } from "react";
 
-const BASE_URL = import.meta.env.VITE_BASE_URL;
+const BASE_URL    = import.meta.env.VITE_BASE_URL;
+const PING_SAMPLES = 3; // parallel fetches per measurement
 
-// Number of parallel requests per measurement (averaged for accuracy)
-const PING_SAMPLES = 3;
+export interface PingResult {
+  value:     number; // averaged latency in ms
+  slotIndex: number; // 0-based slot number (0, 1, 2, …, N-1)
+}
 
 export interface UsePingScannerReturn {
-  isRunning:   boolean;
-  // newPing emits a single new value each measurement (not the whole array)
-  newPing:     number | null;
-  currentPing: number | null;
-  bestPing:    number | null;
-  averagePing: number | null;
-  stability:   "stable" | "moderate" | "unstable";
-  totalCount:  number; // how many measurements have fired so far
+  isRunning:    boolean;
+  latestResult: PingResult | null; // one new result per slot — component appends this
+  currentPing:  number | null;
+  bestPing:     number | null;
+  averagePing:  number | null;
+  stability:    "stable" | "moderate" | "unstable";
+  totalCount:   number;
+  slotCount:    number;   // total expected slots for this scan
+  scanInterval: number;   // ms between slots (needed by component for label math)
+  startedAt:    number;   // Date.now() when start() was called (for label math)
   start: (duration: number, interval: number) => void;
   stop:  () => void;
   reset: () => void;
 }
 
 export function usePingScanner(): UsePingScannerReturn {
-  const [isRunning,    setIsRunning]    = useState(false);
-  const [newPing,      setNewPing]      = useState<number | null>(null);
-  const [currentPing,  setCurrentPing]  = useState<number | null>(null);
-  const [bestPing,     setBestPing]     = useState<number | null>(null);
-  const [averagePing,  setAveragePing]  = useState<number | null>(null);
-  const [stability,    setStability]    = useState<"stable" | "moderate" | "unstable">("stable");
-  const [totalCount,   setTotalCount]   = useState(0);
+  const [isRunning,     setIsRunning]     = useState(false);
+  const [latestResult,  setLatestResult]  = useState<PingResult | null>(null);
+  const [currentPing,   setCurrentPing]   = useState<number | null>(null);
+  const [bestPing,      setBestPing]      = useState<number | null>(null);
+  const [averagePing,   setAveragePing]   = useState<number | null>(null);
+  const [stability,     setStability]     = useState<"stable" | "moderate" | "unstable">("stable");
+  const [totalCount,    setTotalCount]    = useState(0);
+  const [slotCount,     setSlotCount]     = useState(0);
+  const [scanInterval,  setScanInterval]  = useState(2000);
+  const [startedAt,     setStartedAt]     = useState(0);
 
-  // Internal accumulator — never exposed as state (avoids the double-append bug)
-  const allPingsRef     = useRef<number[]>([]);
-  const isRunningRef    = useRef(false);
-  const slotTimersRef   = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const allPingsRef   = useRef<number[]>([]);
+  const isRunningRef  = useRef(false);
+  const timersRef     = useRef<ReturnType<typeof setTimeout>[]>([]);
 
-  // ── Single measurement: PING_SAMPLES parallel fetches, average the results ──
+  // ── One measurement: N parallel fetches → drop highest outlier → average ──
   const measure = useCallback(async (): Promise<number | null> => {
-    const url = BASE_URL.includes("?")
-      ? `${BASE_URL}/ping&_=${Date.now()}`
-      : `${BASE_URL}/ping?_=${Date.now()}`;
+    // Unique cache-bust per measurement (not per sample) to avoid TCP reuse skewing results
+    const bust = Date.now();
+    const url  = `${BASE_URL}/ping?_=${bust}`;
 
-    const promises = Array.from({ length: PING_SAMPLES }, () => {
-      const t0 = performance.now();
-      return fetch(url, { cache: "no-store" })
-        .then(() => performance.now() - t0)
-        .catch(() => null);
-    });
+    const results = await Promise.all(
+      Array.from({ length: PING_SAMPLES }, () => {
+        const t0 = performance.now();
+        return fetch(url, { cache: "no-store" })
+          .then(() => performance.now() - t0)
+          .catch((): null => null);
+      })
+    );
 
-    const results = await Promise.all(promises);
-    const valid   = results.filter((v): v is number => v !== null);
-
+    const valid = results.filter((v): v is number => v !== null);
     if (valid.length === 0) return null;
 
-    // Drop the highest outlier when we have 3+ samples
-    const sorted   = [...valid].sort((a, b) => a - b);
-    const trimmed  = sorted.length >= 3 ? sorted.slice(0, -1) : sorted;
-    const avg      = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
-    return +avg.toFixed(2);
+    const sorted  = [...valid].sort((a, b) => a - b);
+    const trimmed = sorted.length >= 3 ? sorted.slice(0, -1) : sorted; // drop highest
+    return +(trimmed.reduce((a, b) => a + b, 0) / trimmed.length).toFixed(2);
   }, []);
 
-  // ── Update derived stats ───────────────────────────────────────────────────
   const updateStats = useCallback((list: number[]) => {
     if (list.length === 0) return;
     const best = Math.min(...list);
     const avg  = list.reduce((a, b) => a + b, 0) / list.length;
     setBestPing(+best.toFixed(2));
     setAveragePing(+avg.toFixed(2));
-
     if (list.length > 1) {
       const variance = list.reduce((acc, v) => acc + (v - avg) ** 2, 0) / list.length;
-      const cv       = Math.sqrt(variance) / avg;
+      const cv = Math.sqrt(variance) / avg;
       setStability(cv < 0.15 ? "stable" : cv < 0.3 ? "moderate" : "unstable");
     }
   }, []);
 
-  // ── start: schedule exactly N = floor(duration/interval) slots ────────────
+  // ── start ─────────────────────────────────────────────────────────────────
+  // Schedule exactly N = floor(duration/interval) slots.
+  // Each slot fires at i*interval ms after start, independent of network latency.
   const start = useCallback((duration: number, interval: number) => {
-    // Clear any existing timers
-    slotTimersRef.current.forEach(clearTimeout);
-    slotTimersRef.current = [];
+    // Cancel any running scan
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
 
-    // Reset everything
+    const N       = Math.floor(duration / interval); // exact count, e.g. 15 for 30s/2s
+    const now     = Date.now();
+
+    // Reset state
     allPingsRef.current = [];
-    setIsRunning(true);
     isRunningRef.current = true;
-    setNewPing(null);
+    setIsRunning(true);
+    setLatestResult(null);
     setCurrentPing(null);
     setBestPing(null);
     setAveragePing(null);
     setStability("stable");
     setTotalCount(0);
+    setSlotCount(N);
+    setScanInterval(interval);
+    setStartedAt(now);
 
-    const slotCount = Math.floor(duration / interval); // e.g. 30000/2000 = 15
-
-    for (let i = 0; i < slotCount; i++) {
-      const fireAt = i * interval; // slot 0 fires at 0ms, slot 1 at 2000ms, …
-
+    for (let i = 0; i < N; i++) {
       const t = setTimeout(async () => {
         if (!isRunningRef.current) return;
 
@@ -106,35 +120,36 @@ export function usePingScanner(): UsePingScannerReturn {
         if (latency === null || !isRunningRef.current) return;
 
         allPingsRef.current = [...allPingsRef.current, latency];
+        const newCount = allPingsRef.current.length;
 
-        setNewPing(latency);       // single new value — component appends this
+        setLatestResult({ value: latency, slotIndex: i });
         setCurrentPing(latency);
-        setTotalCount(allPingsRef.current.length);
+        setTotalCount(newCount);
         updateStats(allPingsRef.current);
 
-        // Last slot → mark complete
-        if (i === slotCount - 1) {
+        // Mark done when the last slot resolves
+        if (newCount === N) {
           setIsRunning(false);
           isRunningRef.current = false;
         }
-      }, fireAt);
+      }, i * interval);
 
-      slotTimersRef.current.push(t);
+      timersRef.current.push(t);
     }
 
-    // Safety: stop after duration + 500ms buffer in case the last slot is slow
-    const endTimer = setTimeout(() => {
+    // Hard stop: fires at duration + 1s to clean up if the last slot never resolves
+    const guard = setTimeout(() => {
       if (isRunningRef.current) {
         setIsRunning(false);
         isRunningRef.current = false;
       }
-    }, duration + 500);
-    slotTimersRef.current.push(endTimer);
+    }, duration + 1000);
+    timersRef.current.push(guard);
   }, [measure, updateStats]);
 
   const stop = useCallback(() => {
-    slotTimersRef.current.forEach(clearTimeout);
-    slotTimersRef.current = [];
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
     setIsRunning(false);
     isRunningRef.current = false;
   }, []);
@@ -142,13 +157,20 @@ export function usePingScanner(): UsePingScannerReturn {
   const reset = useCallback(() => {
     stop();
     allPingsRef.current = [];
-    setNewPing(null);
+    setLatestResult(null);
     setCurrentPing(null);
     setBestPing(null);
     setAveragePing(null);
     setStability("stable");
     setTotalCount(0);
+    setSlotCount(0);
+    setScanInterval(2000);
+    setStartedAt(0);
   }, [stop]);
 
-  return { isRunning, newPing, currentPing, bestPing, averagePing, stability, totalCount, start, stop, reset };
+  return {
+    isRunning, latestResult, currentPing, bestPing, averagePing,
+    stability, totalCount, slotCount, scanInterval, startedAt,
+    start, stop, reset,
+  };
 }

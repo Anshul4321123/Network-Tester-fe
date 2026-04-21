@@ -13,11 +13,15 @@ const CHART_H = 90;
 interface Props {
   pings: number[];
   pingTimes: number[];
+   slotIndices: number[];
+  intervalMs: number;
   onExpand: () => void;
   onPointClick: (index: number, value: number, time: string) => void;
 }
 
-export default function MiniGraph({ pings, pingTimes, onExpand, onPointClick }: Props) {
+export default function MiniGraph({ pings, pingTimes,slotIndices, intervalMs, onExpand, onPointClick }: Props) {
+    void slotIndices;
+  void intervalMs;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   if (pings.length === 0) return null;

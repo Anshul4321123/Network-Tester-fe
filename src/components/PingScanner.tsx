@@ -1,13 +1,14 @@
 // components/PingScanner.tsx
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef} from "react";
 import { usePingScanner } from "../hooks/usePingScanner";
+// import type { PingResult } from "../hooks/usePingScanner";
 import FullScreenGraph from "./Fullscreengraph";
 import MiniGraph from "./Minigraph";
-
 // ── Persisted state across accidental tab switches ──────────────────────────
 let savedScanState = {
   pings:         [] as number[],
-  pingTimes:     [] as number[],
+  pingTimes:     [] as number[],   // kept for backwards compat (not used for labels)
+  slotIndices:   [] as number[],   // slot index per ping — used for graph labels
   currentPing:   null as number | null,
   bestPing:      null as number | null,
   averagePing:   null as number | null,
@@ -17,7 +18,7 @@ let savedScanState = {
   scanInterval:  2000,
   wasRunning:    false,
 };
-const EMPTY_SCAN_STATE = { ...savedScanState };
+const EMPTY_SCAN_STATE = { ...savedScanState, slotIndices: [] as number[] };
 function clearSavedStateObj() {
   savedScanState = { ...EMPTY_SCAN_STATE, pings: [], pingTimes: [] };
 }
@@ -97,8 +98,8 @@ interface PingScannerProps { isOpen: boolean; onClose: () => void; }
 
 export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
   const {
-    isRunning, newPing, currentPing, bestPing, averagePing,
-    stability, totalCount, start, stop, reset,
+    isRunning, latestResult, currentPing, bestPing, averagePing,
+    stability, totalCount, scanInterval: hookScanInterval, start, stop, reset,
   } = usePingScanner();
 
   // Settings
@@ -120,9 +121,10 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
   const [isTabActive,     setIsTabActive]    = useState(true);
   const [, setInitialBest]                   = useState<number | null>(null);
 
-  // Persistent data — built ONE entry at a time from newPing
-  const [persistentPings,  setPersistentPings]  = useState<number[]>([]);
-  const [pingTimestamps,   setPingTimestamps]   = useState<number[]>([]);
+  // Persistent data — built ONE entry at a time from latestResult
+  const [persistentPings,   setPersistentPings]   = useState<number[]>([]);
+  const [pingTimestamps,    setPingTimestamps]    = useState<number[]>([]);
+  const [slotIndices,       setSlotIndices]       = useState<number[]>([]);
 
   // Sound tracking
   const lastSoundPingRef  = useRef<number | null>(null); // previous ping value for comparison
@@ -150,6 +152,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
       setScanInterval(savedScanState.scanInterval);
       setPersistentPings(savedScanState.pings);
       setPingTimestamps(savedScanState.pingTimes);
+      setSlotIndices(savedScanState.slotIndices ?? []);
       setHasResumed(true);
       setWasStoppedByTab(true);
       setWasStoppedByUser(false);
@@ -166,32 +169,32 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
   }, [isOpen]);
 
   // ── Append ONE new ping per measurement + play sound ─────────────────────
-  // newPing from the hook is a single fresh value each time (not the full array)
+  // latestResult from the hook contains { value, slotIndex } — one per slot
   useEffect(() => {
-    if (newPing === null) return;
+    if (latestResult === null) return;
+    const { value: pingVal, slotIndex } = latestResult;
     const now = Date.now();
 
-    // Append exactly one entry
-    setPersistentPings(prev => [...prev, newPing].slice(-200));
-    setPingTimestamps(prev  => [...prev, now].slice(-200));
+    // Append exactly one entry to each array
+    setPersistentPings(prev   => [...prev, pingVal].slice(-200));
+    setPingTimestamps(prev    => [...prev, now].slice(-200));       // kept for tooltip formatTime
+    setSlotIndices(prev       => [...prev, slotIndex].slice(-200)); // used for graph labels
 
     // ── Sound logic ──────────────────────────────────────────────────────────
     if (soundEnabled && lastSoundPingRef.current !== null && now - soundCooldownRef.current > SOUND_COOLDOWN) {
-      const prev  = lastSoundPingRef.current;
-      const delta = (prev - newPing) / prev; // positive = ping dropped (better)
+      const prevPing = lastSoundPingRef.current;
+      const delta    = (prevPing - pingVal) / prevPing; // positive = improved
 
       if (delta >= 0.15) {
-        // Ping dropped ≥15% → good spot found
         playSound(SOUND_GOOD);
         soundCooldownRef.current = now;
       } else if (-delta >= 0.20) {
-        // Ping spiked ≥20% → signal getting worse
         playSound(SOUND_ALERT);
         soundCooldownRef.current = now;
       }
     }
-    lastSoundPingRef.current = newPing;
-  }, [newPing, soundEnabled]);
+    lastSoundPingRef.current = pingVal;
+  }, [latestResult, soundEnabled]);
 
   // ── Countdown timer ───────────────────────────────────────────────────────
   useEffect(() => {
@@ -222,7 +225,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
         setWasStoppedByUser(false);
         stop();
         savedScanState = {
-          pings: persistentPings, pingTimes: pingTimestamps,
+          pings: persistentPings, pingTimes: pingTimestamps, slotIndices,
           currentPing, bestPing, averagePing, stability,
           timeRemaining, duration, scanInterval, wasRunning: true,
         };
@@ -230,7 +233,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
     };
     document.addEventListener("visibilitychange", handle);
     return () => document.removeEventListener("visibilitychange", handle);
-  }, [isRunning, stop, persistentPings, pingTimestamps, currentPing, bestPing, averagePing, stability, timeRemaining, duration, scanInterval]);
+  }, [isRunning, stop, persistentPings, pingTimestamps, slotIndices, currentPing, bestPing, averagePing, stability, timeRemaining, duration, scanInterval]);
 
   // ── Smart message ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -262,7 +265,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
   // ── Actions ───────────────────────────────────────────────────────────────
   const clearLocal = () => {
     clearSavedStateObj();
-    setPersistentPings([]); setPingTimestamps([]);
+    setPersistentPings([]); setPingTimestamps([]); setSlotIndices([]);
     setHasResumed(false); setWasStoppedByTab(false); setWasStoppedByUser(false); setScanComplete(false);
     lastSoundPingRef.current = null; soundCooldownRef.current = 0;
   };
@@ -272,7 +275,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
     setShowResults(false); setWasStoppedByTab(false); setWasStoppedByUser(false);
     setHasResumed(false); setScanComplete(false); setInitialBest(bestPing);
     setImprovement(null); setTimeRemaining(duration);
-    setPersistentPings([]); setPingTimestamps([]);
+    setPersistentPings([]); setPingTimestamps([]); setSlotIndices([]);
     lastSoundPingRef.current = null; soundCooldownRef.current = 0;
     start(duration, scanInterval);
     clearSavedStateObj();
@@ -300,8 +303,11 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
   const displayCurrentPing   = currentPing  ?? savedScanState.currentPing;
   const displayBestPing      = bestPing     ?? savedScanState.bestPing;
   const displayAveragePing   = averagePing  ?? savedScanState.averagePing;
-  const displayPings         = persistentPings.length > 0 ? persistentPings : savedScanState.pings;
-  const displayPingTimes     = pingTimestamps.length   > 0 ? pingTimestamps  : savedScanState.pingTimes;
+  const displayPings       = persistentPings.length > 0 ? persistentPings : savedScanState.pings;
+  const displayPingTimes   = pingTimestamps.length   > 0 ? pingTimestamps  : savedScanState.pingTimes;
+  const displaySlotIndices = slotIndices.length      > 0 ? slotIndices     : (savedScanState.slotIndices ?? []);
+  // Interval used for labels: prefer hook value while running, fall back to state setting
+  const displayInterval    = hookScanInterval > 0 ? hookScanInterval : scanInterval;
   const displayTimeRemaining = timeRemaining > 0 ? timeRemaining : savedScanState.timeRemaining;
   const displayStability     = isRunning ? stability : savedScanState.stability;
 
@@ -323,7 +329,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
 
   return (
     <>
-      <FullScreenGraph isOpen={showFullGraph} onClose={() => setShowFullGraph(false)} pings={displayPings} pingTimes={displayPingTimes} onPointClick={handlePointClick} />
+      <FullScreenGraph isOpen={showFullGraph} onClose={() => setShowFullGraph(false)} pings={displayPings} pingTimes={displayPingTimes} slotIndices={displaySlotIndices} intervalMs={displayInterval} onPointClick={handlePointClick} />
 
       {/* Backdrop */}
       <div onClick={handleClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", zIndex: 2000 }} />
@@ -465,7 +471,7 @@ export default function PingScanner({ isOpen, onClose }: PingScannerProps) {
 
           {/* Mini graph */}
           {displayPings.length > 0 && displayPingTimes.length > 0 && (
-            <MiniGraph pings={displayPings} pingTimes={displayPingTimes} onExpand={() => setShowFullGraph(true)} onPointClick={handlePointClick} />
+            <MiniGraph pings={displayPings} pingTimes={displayPingTimes} slotIndices={displaySlotIndices} intervalMs={displayInterval} onExpand={() => setShowFullGraph(true)} onPointClick={handlePointClick} />
           )}
 
           {/* Click-point toast */}
