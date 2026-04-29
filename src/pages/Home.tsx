@@ -505,6 +505,16 @@ export default function Home() {
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "clamp(12px,4vw,24px)", display: "flex", flexDirection: "column", gap: 12 }}>
 
         <TrustBanner />
+        {/* ── AI Diagnostic — shown after test completes ─────────────
+             Sits just below the metrics cards so it's the first
+             action-oriented card the user sees after a test.       ── */}
+        {score !== null && (
+          <AIDiagnostic
+            metrics={{ ping, download, upload, jitter, score, networkType }}
+            history={history}
+            serverBaseUrl={SERVER_BASE_URL}
+          />
+        )}
 
         <Hero
           score={score} ping={ping} download={download} upload={upload} jitter={jitter}
@@ -528,16 +538,7 @@ export default function Home() {
           </>
         )}
 
-        {/* ── AI Diagnostic — shown after test completes ─────────────
-             Sits just below the metrics cards so it's the first
-             action-oriented card the user sees after a test.       ── */}
-        {!isTestActive && score !== null && (
-          <AIDiagnostic
-            metrics={{ ping, download, upload, jitter, score, networkType }}
-            history={history}
-            serverBaseUrl={SERVER_BASE_URL}
-          />
-        )}
+        
 
         {/* Section 1: Network Details */}
         <EnhancedCollapsibleSection sectionKey="network" defaultOpen={openSections.network || false} onToggle={o => setOpenSections(p => ({ ...p, network: o }))} isHighlighted>
