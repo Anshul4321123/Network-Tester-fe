@@ -1,5 +1,5 @@
 // Home.tsx
-// Post-test popup sequence: HighScore → Comparison → SmartRedirect (one, no auto-dismiss)
+// Post-test popup sequence: Celebration → HighScore → Comparison → SmartRedirect (one, no auto-dismiss)
 import { useEffect, useState, useRef } from "react";
 import useSpeedTest from "../hooks/useSpeedTest";
 import Hero from "../components/Hero";
@@ -17,6 +17,7 @@ import ServerWarming from "../components/ServerWarming";
 import TrustBanner from "../components/TrustBanner";
 import AllTimeBest from "../components/AllTimeBest";
 import FooterMessage from "../components/FooterMessage";
+import AIDiagnostic from "../components/Aidiagnostic";
 import { useServerWarmup } from "../hooks/useServerWarmup";
 import {
   getHistory, getBestScore, getBestStats,
@@ -29,6 +30,9 @@ import PingScanner from "../components/PingScanner";
 import SmartRedirectPopup from "../components/SmartRedirectPopup";
 import HighScorePopup, { type HighScoreRecord } from "../components/HighScorePopup";
 
+// Backend URL — set VITE_SERVER_URL in your frontend .env for production
+const SERVER_BASE_URL = (import.meta as any).env?.VITE_SERVER_URL || "";
+
 // ─────────────────────────────────────────────────────────────
 // Smart-redirect popup priority queue
 // ─────────────────────────────────────────────────────────────
@@ -39,22 +43,12 @@ const SMART_PRIORITY: Record<SmartPopupType, number> = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// Post-test popup chain
-// Sequence: highscore → comparison → smart (one only)
+// High-score detection helpers (5-day rolling window)
 // ─────────────────────────────────────────────────────────────
-
-
-// ─────────────────────────────────────────────────────────────
-// High-score detection helpers
-// ─────────────────────────────────────────────────────────────
-const HS_KEY = "best_stats_5d"; // localStorage key
+const HS_KEY = "best_stats_5d";
 
 interface BestStats5d {
-  score: number;
-  download: number;
-  upload: number;
-  ping: number;
-  updatedAt: number; // timestamp
+  score: number; download: number; upload: number; ping: number; updatedAt: number;
 }
 
 function load5dBest(): BestStats5d | null {
@@ -62,11 +56,7 @@ function load5dBest(): BestStats5d | null {
     const raw = localStorage.getItem(HS_KEY);
     if (!raw) return null;
     const v: BestStats5d = JSON.parse(raw);
-    // Expire after 5 days
-    if (Date.now() - v.updatedAt > 5 * 24 * 60 * 60 * 1000) {
-      localStorage.removeItem(HS_KEY);
-      return null;
-    }
+    if (Date.now() - v.updatedAt > 5 * 24 * 60 * 60 * 1000) { localStorage.removeItem(HS_KEY); return null; }
     return v;
   } catch { return null; }
 }
@@ -77,25 +67,16 @@ function save5dBest(score: number, download: number, upload: number, ping: numbe
     score:    existing ? Math.max(existing.score,    score)    : score,
     download: existing ? Math.max(existing.download, download) : download,
     upload:   existing ? Math.max(existing.upload,   upload)   : upload,
-    ping:     existing ? Math.min(existing.ping,     ping)     : ping, // lower is better
+    ping:     existing ? Math.min(existing.ping,     ping)     : ping,
     updatedAt: Date.now(),
   };
   localStorage.setItem(HS_KEY, JSON.stringify(updated));
 }
 
-/**
- * Compare current test results against the 5-day best.
- * Returns an array of broken records, sorted by "impressiveness"
- * (biggest % improvement first), or empty if nothing was beaten.
- */
-function detectHighScores(
-  score: number, download: number, upload: number, ping: number,
-): HighScoreRecord[] {
+function detectHighScores(score: number, download: number, upload: number, ping: number): HighScoreRecord[] {
   const prev = load5dBest();
   const records: HighScoreRecord[] = [];
-
   if (!prev) {
-    // First-ever record — everything is a "first"
     records.push(
       { metric: "score",    oldValue: 0, newValue: score,    isFirstEver: true },
       { metric: "download", oldValue: 0, newValue: download, isFirstEver: true },
@@ -104,28 +85,20 @@ function detectHighScores(
     );
     return records;
   }
-
   if (score    > prev.score)    records.push({ metric: "score",    oldValue: prev.score,    newValue: score,    isFirstEver: false });
   if (download > prev.download) records.push({ metric: "download", oldValue: prev.download, newValue: download, isFirstEver: false });
   if (upload   > prev.upload)   records.push({ metric: "upload",   oldValue: prev.upload,   newValue: upload,   isFirstEver: false });
   if (ping     < prev.ping)     records.push({ metric: "ping",     oldValue: prev.ping,     newValue: ping,     isFirstEver: false });
-
-  // Sort by biggest relative improvement first
   records.sort((a, b) => {
-    const pctA = a.metric === "ping"
-      ? (a.oldValue - a.newValue) / (a.oldValue || 1)
-      : (a.newValue - a.oldValue) / (a.oldValue || 1);
-    const pctB = b.metric === "ping"
-      ? (b.oldValue - b.newValue) / (b.oldValue || 1)
-      : (b.newValue - b.oldValue) / (b.oldValue || 1);
+    const pctA = a.metric === "ping" ? (a.oldValue - a.newValue) / (a.oldValue || 1) : (a.newValue - a.oldValue) / (a.oldValue || 1);
+    const pctB = b.metric === "ping" ? (b.oldValue - b.newValue) / (b.oldValue || 1) : (b.newValue - b.oldValue) / (b.oldValue || 1);
     return pctB - pctA;
   });
-
   return records;
 }
 
 // ─────────────────────────────────────────────────────────────
-// Collapsible section config (matches provided Home.tsx)
+// Collapsible section config
 // ─────────────────────────────────────────────────────────────
 interface SectionConfig {
   icon: string; title: string; description: string;
@@ -158,7 +131,7 @@ function EnhancedCollapsibleSection({ sectionKey, children, defaultOpen = false,
   onToggle?: (o: boolean) => void; isHighlighted?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
-  const [showTip, setShowTip]   = useState(false);
+  const [showTip, setShowTip] = useState(false);
   const s = SECTIONS[sectionKey];
   const toggle = () => { const n = !isOpen; setIsOpen(n); onToggle?.(n); };
   return (
@@ -223,13 +196,13 @@ function ShareResultCard({ score, onClick, isVisible }: { score: number | null; 
   );
 }
 
-const DEFAULT_NETWORKS = ["Home Network","Office Network","Cafe WiFi","Mobile Data","Gaming Network","Streaming Network"];
+const DEFAULT_NETWORKS = ["Home Network", "Office Network", "Cafe WiFi", "Mobile Data", "Gaming Network", "Streaming Network"];
 
 function NetworkSelector({ networkName, setNetworkName, savedNetworks, setSavedNetworks }: any) {
-  const [showAdd, setShowAdd]           = useState(false);
-  const [newName, setNewName]           = useState("");
-  const [delConfirm, setDelConfirm]     = useState<string | null>(null);
-  const [dropOpen, setDropOpen]         = useState(false);
+  const [showAdd, setShowAdd]       = useState(false);
+  const [newName, setNewName]       = useState("");
+  const [delConfirm, setDelConfirm] = useState<string | null>(null);
+  const [dropOpen, setDropOpen]     = useState(false);
 
   const add = () => {
     if (newName.trim() && !savedNetworks.includes(newName.trim())) {
@@ -297,30 +270,27 @@ function NetworkSelector({ networkName, setNetworkName, savedNetworks, setSavedN
 // MAIN HOME COMPONENT
 // ─────────────────────────────────────────────────────────────
 export default function Home() {
-  const [history,      setHistory]      = useState<SpeedTestRecord[]>(getHistory());
-  const [bestScore,    setBestScore]    = useState<number | null>(getBestScore());
-  const [bestStats,    setBestStats]    = useState<BestStats | null>(getBestStats());
-  const [achievements, setAchievements] = useState<Achievements>(getAchievements());
-  const [isTabVisible, setIsTabVisible] = useState(true);
-  const [showLiveGraph,setShowLiveGraph]= useState(true);
+  const [history,       setHistory]      = useState<SpeedTestRecord[]>(getHistory());
+  const [bestScore,     setBestScore]    = useState<number | null>(getBestScore());
+  const [bestStats,     setBestStats]    = useState<BestStats | null>(getBestStats());
+  const [achievements,  setAchievements] = useState<Achievements>(getAchievements());
+  const [isTabVisible,  setIsTabVisible] = useState(true);
+  const [showLiveGraph, setShowLiveGraph]= useState(true);
   const [showGraphPopup,setShowGraphPopup]= useState(false);
-  const [testSelection, setTestSelection] = useState(() => loadTestSelection());
-  const [testCompleted, setTestCompleted] = useState(0);
-  const [showShareCard, setShowShareCard] = useState(false);
-  const [selectedServer, setSelectedServer] = useState(() => localStorage.getItem("selected_server") || "auto");
-  const [networkName, setNetworkName]   = useState(() => localStorage.getItem("network_name") || "Home Network");
-  const [savedNetworks, setSavedNetworks] = useState<string[]>(() => {
+  const [testSelection, setTestSelection]= useState(() => loadTestSelection());
+  const [testCompleted, setTestCompleted]= useState(0);
+  const [showShareCard, setShowShareCard]= useState(false);
+  const [selectedServer,setSelectedServer]= useState(() => localStorage.getItem("selected_server") || "auto");
+  const [networkName,   setNetworkName]  = useState(() => localStorage.getItem("network_name") || "Home Network");
+  const [savedNetworks, setSavedNetworks]= useState<string[]>(() => {
     const s = localStorage.getItem("saved_networks");
     return s ? JSON.parse(s) : [...DEFAULT_NETWORKS];
   });
   const [lastProcessedTestId, setLastProcessedTestId] = useState("");
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
-  const [showPingScanner, setShowPingScanner] = useState(false);
+  const [openSections,  setOpenSections] = useState<Record<string, boolean>>({});
+  const [showPingScanner,setShowPingScanner]= useState(false);
 
-  // ── Post-test popup chain ─────────────────────────────────────
-  // All popups go through a single queue. showNextInQueue() is called
-  // when the currently-visible popup closes. Nothing fires in parallel.
-
+  // ── Post-test popup queue ─────────────────────────────────────
   type QueueItem =
     | { kind: "celebration"; records: any[]; isFirstTime: boolean; firstTimeType: string }
     | { kind: "highscore";   records: HighScoreRecord[] }
@@ -328,9 +298,8 @@ export default function Home() {
     | { kind: "smart";       type: SmartPopupType; data?: any };
 
   const popupQueueRef = useRef<QueueItem[]>([]);
-  const popupBusyRef  = useRef(false); // true while a popup is visible
+  const popupBusyRef  = useRef(false);
 
-  // Active popup state — only one is ever truthy at a time
   const [celebration,     setCelebration]     = useState<any>(null);
   const [highScorePopup,  setHighScorePopup]  = useState<{ show: boolean; records: HighScoreRecord[] }>({ show: false, records: [] });
   const [comparisonPopup, setComparisonPopup] = useState<any>(null);
@@ -349,17 +318,11 @@ export default function Home() {
 
   const serverWarmedUp = useServerWarmup();
 
-  // ── Queue-based popup system ─────────────────────────────────
-  // showNextInQueue: dequeues one item and sets the right state.
-  // Called on mount (no-op if queue empty) and after each popup closes.
+  // ── Queue runner ──────────────────────────────────────────────
   const showNextInQueue = () => {
-    if (popupQueueRef.current.length === 0) {
-      popupBusyRef.current = false;
-      return;
-    }
+    if (popupQueueRef.current.length === 0) { popupBusyRef.current = false; return; }
     popupBusyRef.current = true;
     const item = popupQueueRef.current.shift()!;
-    // Small gap so closing animation finishes before next opens
     setTimeout(() => {
       if (item.kind === "celebration") {
         setCelebration({ show: true, records: item.records, isFirstTime: item.isFirstTime, firstTimeType: item.firstTimeType });
@@ -373,10 +336,9 @@ export default function Home() {
     }, 380);
   };
 
-  // ── Save test result + build popup queue ────────────────────
+  // ── Main test-complete effect ─────────────────────────────────
   useEffect(() => {
     if (phase !== "complete" || score === null || download === null || upload === null || ping === null) return;
-    // Deduplicate: same result values → already processed
     const testId = `${Math.round(score)}-${Math.round(download)}-${Math.round(upload)}-${Math.round(ping)}`;
     if (lastProcessedTestId === testId) return;
     if (running) return;
@@ -388,7 +350,7 @@ export default function Home() {
     localStorage.removeItem("test_network_name");
     localStorage.removeItem("test_start_time");
 
-    // 1. Detect high scores BEFORE saving (compare against old best)
+    // 1. Detect high scores BEFORE saving
     const hsRecords = detectHighScores(score, download, upload, ping);
 
     // 2. Save result
@@ -397,21 +359,21 @@ export default function Home() {
     saveBestStats(score, download, upload, ping);
     save5dBest(score, download, upload, ping);
 
-    // 3. Comparison data (only when 2+ tests exist)
+    // 3. Comparison data
     const historyList = getHistory();
     let compImprovements: any[] | null = null;
     if (historyList.length >= 2) {
       const prev = historyList[1], curr = historyList[0];
       compImprovements = [
-        { type: "download", oldValue: prev.download,       newValue: curr.download,       improved: curr.download > prev.download },
-        { type: "upload",   oldValue: prev.upload,         newValue: curr.upload,         improved: curr.upload   > prev.upload   },
-        { type: "ping",     oldValue: prev.ping,           newValue: curr.ping,           improved: curr.ping     < prev.ping     },
-        { type: "jitter",   oldValue: prev.jitter || 0,    newValue: curr.jitter || 0,    improved: (curr.jitter || 0) < (prev.jitter || 0) },
-        { type: "score",    oldValue: prev.score,          newValue: curr.score,          improved: curr.score    > prev.score    },
+        { type: "download", oldValue: prev.download,    newValue: curr.download,    improved: curr.download > prev.download },
+        { type: "upload",   oldValue: prev.upload,      newValue: curr.upload,      improved: curr.upload   > prev.upload   },
+        { type: "ping",     oldValue: prev.ping,        newValue: curr.ping,        improved: curr.ping     < prev.ping     },
+        { type: "jitter",   oldValue: prev.jitter || 0, newValue: curr.jitter || 0, improved: (curr.jitter || 0) < (prev.jitter || 0) },
+        { type: "score",    oldValue: prev.score,       newValue: curr.score,       improved: curr.score    > prev.score    },
       ];
     }
 
-    // 4. Smart-redirect candidate (highest priority wins; try-tools is always present)
+    // 4. Smart-redirect candidate
     const smartCandidates: PendingSmartPopup[] = [];
     if (ping > 100) {
       const lastShown = localStorage.getItem("last_latency_popup");
@@ -430,28 +392,23 @@ export default function Home() {
       setHasSeenFeaturePopup(true);
       localStorage.setItem("has_seen_ping_feature", "true");
     }
-    // try-tools always present as ultimate fallback
     smartCandidates.push({ priority: SMART_PRIORITY["try-tools"], type: "try-tools", data: {} });
     smartCandidates.sort((a, b) => a.priority - b.priority);
-    const smartItem = smartCandidates[0]; // one popup, highest priority
+    const smartItem = smartCandidates[0];
 
     // 5. First-time achievements
     const newAchievements: { type: string; value: number }[] = [];
-    if (!currentAchievements.hasRunPing     && ping > 0)                        { newAchievements.push({ type: "ping",     value: ping });     updateAchievement("ping");     }
-    if (!currentAchievements.hasRunJitter   && jitter !== null && jitter >= 0)  { newAchievements.push({ type: "jitter",   value: jitter });   updateAchievement("jitter");   }
-    if (!currentAchievements.hasRunDownload && download > 0)                    { newAchievements.push({ type: "download", value: download }); updateAchievement("download"); }
-    if (!currentAchievements.hasRunUpload   && upload > 0)                      { newAchievements.push({ type: "upload",   value: upload });   updateAchievement("upload");   }
+    if (!currentAchievements.hasRunPing     && ping > 0)                       { newAchievements.push({ type: "ping",     value: ping });     updateAchievement("ping");     }
+    if (!currentAchievements.hasRunJitter   && jitter !== null && jitter >= 0) { newAchievements.push({ type: "jitter",   value: jitter });   updateAchievement("jitter");   }
+    if (!currentAchievements.hasRunDownload && download > 0)                   { newAchievements.push({ type: "download", value: download }); updateAchievement("download"); }
+    if (!currentAchievements.hasRunUpload   && upload > 0)                     { newAchievements.push({ type: "upload",   value: upload });   updateAchievement("upload");   }
 
-    setBestScore(getBestScore());
-    setBestStats(getBestStats());
-    setHistory(getHistory());
-    setAchievements(getAchievements());
+    setBestScore(getBestScore()); setBestStats(getBestStats());
+    setHistory(getHistory()); setAchievements(getAchievements());
     setLastProcessedTestId(testId);
 
-    // 6. Build the queue in order: celebration → highscore → comparison → smart
-    //    Each item only shows after the previous one closes.
-    const queue: any[] = [];
-
+    // 6. Build queue: celebration → highscore → comparison → smart
+    const queue: QueueItem[] = [];
     if (newAchievements.length > 0) {
       queue.push({
         kind: "celebration",
@@ -460,15 +417,11 @@ export default function Home() {
         firstTimeType: newAchievements[0]?.type,
       });
     }
-    if (hsRecords.length > 0) {
-      queue.push({ kind: "highscore", records: hsRecords });
-    }
-    if (compImprovements) {
-      queue.push({ kind: "comparison", improvements: compImprovements });
-    }
+    if (hsRecords.length > 0) queue.push({ kind: "highscore", records: hsRecords });
+    if (compImprovements)     queue.push({ kind: "comparison", improvements: compImprovements });
     queue.push({ kind: "smart", type: smartItem.type, data: smartItem.data });
 
-    // Reset all popup state before starting (clear any stale state from previous test)
+    // Reset stale popup state
     setCelebration(null);
     setHighScorePopup({ show: false, records: [] });
     setComparisonPopup(null);
@@ -476,13 +429,10 @@ export default function Home() {
 
     popupQueueRef.current = queue;
     popupBusyRef.current  = false;
-
-    // Start the chain after a short delay so the results UI renders first
     setTimeout(showNextInQueue, 900);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase]);
-  // ↑ Only [phase] — we want this to fire once per test completion cycle.
 
   // ── Smart popup action handler ────────────────────────────────
   const handleSmartPopupAction = (action: string) => {
@@ -512,10 +462,19 @@ export default function Home() {
   useEffect(() => { if (phase === "complete") setTestCompleted(p => p + 1); }, [phase]);
   useEffect(() => { saveTestSelection(testSelection); }, [testSelection]);
 
+  // ── History sync ──────────────────────────────────────────────
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const h  = getHistory();      if (JSON.stringify(h)   !== JSON.stringify(history))     setHistory(h);
+      const bs = getBestScore();    if (bs !== bestScore)                                     setBestScore(bs);
+      const bst= getBestStats();    if (JSON.stringify(bst) !== JSON.stringify(bestStats))    setBestStats(bst);
+      const ac = getAchievements(); if (JSON.stringify(ac)  !== JSON.stringify(achievements)) setAchievements(ac);
+    }, 2000);
+    return () => clearInterval(iv);
+  }, [history, bestScore, bestStats, achievements]);
+
   const handleServerChange = (serverId: string, baseUrl: string) => {
-    setSelectedServer(serverId);
-    localStorage.setItem("selected_server", serverId);
-    localStorage.setItem("selected_server_url", baseUrl);
+    setSelectedServer(serverId); localStorage.setItem("selected_server", serverId); localStorage.setItem("selected_server_url", baseUrl);
   };
   const formatSpeed = (v: number) => v > 1000 ? `${(v / 1000).toFixed(1)} Gbps` : `${v.toFixed(1)} Mbps`;
 
@@ -527,22 +486,9 @@ export default function Home() {
     runTest("manual", testSelection, nn, nt);
   };
 
-  const getBg = () => running ? {
-    background: "linear-gradient(135deg,#e0f2fe 0%,#fae8ff 50%,#dbeafe 100%)", transition: "background 0.5s ease", minHeight: "100vh",
-  } : {
-    background: "linear-gradient(135deg,#f8fafc 0%,#f1f5f9 50%,#eef2ff 100%)", transition: "background 0.5s ease", minHeight: "100vh",
-  };
-
-  // ── History sync ──────────────────────────────────────────────
-  useEffect(() => {
-    const iv = setInterval(() => {
-      const h = getHistory();          if (JSON.stringify(h)   !== JSON.stringify(history))      setHistory(h);
-      const bs = getBestScore();       if (bs !== bestScore)                                      setBestScore(bs);
-      const bst = getBestStats();      if (JSON.stringify(bst) !== JSON.stringify(bestStats))     setBestStats(bst);
-      const ac = getAchievements();    if (JSON.stringify(ac)  !== JSON.stringify(achievements))  setAchievements(ac);
-    }, 2000);
-    return () => clearInterval(iv);
-  }, [history, bestScore, bestStats, achievements]);
+  const getBg = () => running
+    ? { background: "linear-gradient(135deg,#e0f2fe 0%,#fae8ff 50%,#dbeafe 100%)", transition: "background 0.5s ease", minHeight: "100vh" }
+    : { background: "linear-gradient(135deg,#f8fafc 0%,#f1f5f9 50%,#eef2ff 100%)", transition: "background 0.5s ease", minHeight: "100vh" };
 
   const isTestActive      = running || (phase !== "idle" && phase !== "complete");
   const isMainTestRunning = isTestActive;
@@ -582,7 +528,18 @@ export default function Home() {
           </>
         )}
 
-        {/* Section 1: Network Details (includes Ping Scanner) */}
+        {/* ── AI Diagnostic — shown after test completes ─────────────
+             Sits just below the metrics cards so it's the first
+             action-oriented card the user sees after a test.       ── */}
+        {!isTestActive && score !== null && (
+          <AIDiagnostic
+            metrics={{ ping, download, upload, jitter, score, networkType }}
+            history={history}
+            serverBaseUrl={SERVER_BASE_URL}
+          />
+        )}
+
+        {/* Section 1: Network Details */}
         <EnhancedCollapsibleSection sectionKey="network" defaultOpen={openSections.network || false} onToggle={o => setOpenSections(p => ({ ...p, network: o }))} isHighlighted>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <NetworkSelector networkName={networkName} setNetworkName={setNetworkName} savedNetworks={savedNetworks} setSavedNetworks={setSavedNetworks} />
@@ -618,9 +575,8 @@ export default function Home() {
 
       {/* ── Sequential popup chain ─────────────────────────────────
            Order: Celebration → HighScore → Comparison → SmartRedirect
-           Each popup calls showNextInQueue() on close so they never overlap. ── */}
+           Each popup calls showNextInQueue() on close.            ── */}
 
-      {/* 1. First-time achievement celebration */}
       {celebration?.show && (
         <CelebrationPopup
           isOpen={celebration.show}
@@ -631,14 +587,12 @@ export default function Home() {
         />
       )}
 
-      {/* 2. High Score */}
       <HighScorePopup
         isOpen={highScorePopup.show}
         records={highScorePopup.records}
         onClose={() => { setHighScorePopup({ show: false, records: [] }); showNextInQueue(); }}
       />
 
-      {/* 3. Comparison */}
       {comparisonPopup?.show && (
         <ComparisonPopup
           isOpen={comparisonPopup.show}
@@ -647,7 +601,6 @@ export default function Home() {
         />
       )}
 
-      {/* 4. Smart redirect */}
       <SmartRedirectPopup
         isOpen={smartPopup.isOpen}
         onClose={() => { setSmartPopup({ isOpen: false, type: "try-tools" }); showNextInQueue(); }}
@@ -656,12 +609,19 @@ export default function Home() {
         data={smartPopup.data}
       />
 
-      {/* Other */}
       <PingScanner isOpen={showPingScanner} onClose={() => setShowPingScanner(false)} />
 
-      <LiveGraphPopup isOpen={showGraphPopup} onClose={() => setShowGraphPopup(false)} downloadHistory={downloadHistory} uploadHistory={uploadHistory} pingHistory={pingHistory} jitterHistory={jitterHistory} download={download} upload={upload} ping={ping} jitter={jitter} phase={phase} running={running} testSelection={testSelection} />
+      <LiveGraphPopup
+        isOpen={showGraphPopup} onClose={() => setShowGraphPopup(false)}
+        downloadHistory={downloadHistory} uploadHistory={uploadHistory}
+        pingHistory={pingHistory} jitterHistory={jitterHistory}
+        download={download} upload={upload} ping={ping} jitter={jitter}
+        phase={phase} running={running} testSelection={testSelection}
+      />
 
-      {showShareCard && <ShareableResultCard score={score} ping={ping} download={download} upload={upload} jitter={jitter} networkType={networkType} mode={mode} modeResult={modeResult} onClose={() => setShowShareCard(false)} />}
+      {showShareCard && (
+        <ShareableResultCard score={score} ping={ping} download={download} upload={upload} jitter={jitter} networkType={networkType} mode={mode} modeResult={modeResult} onClose={() => setShowShareCard(false)} />
+      )}
 
       <style>{`
         @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
