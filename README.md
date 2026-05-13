@@ -1,75 +1,71 @@
-# React + TypeScript + Vite
+# SpeedLab - Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern, feature-rich internet speed testing application with AI-powered network diagnostics, real-time visualizations, and comprehensive test history management.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### 🚀 Core Speed Testing
+- **Real-time speed tests** - Download, upload, ping, and jitter measurements
+- **Live graph visualization** - Watch your speeds update in real-time
+- **Multiple test modes** - Quick test, gaming mode, streaming mode
+- **Bufferbloat measurement** - Test your connection's latency under load
 
-## React Compiler
+### 🤖 AI-Powered Diagnostics
+- **Google Gemini integration** - Get intelligent network analysis
+- **Personalized recommendations** - Actionable tips based on your test results
+- **Historical pattern detection** - Identifies trends in your connection quality
+- **Privacy-first** - Only numeric metrics are sent, no personal data
+- **Daily rate limiting** - One free diagnosis per day with local storage tracking
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+### 📊 History & Analytics
+- **Comprehensive test history** - Store unlimited test results locally
+- **CSV import/export** - Backup or share your test data
+- **Network naming** - Label and organize tests by network (Home, Office, Cafe, etc.)
+- **Trend analysis** - Visualize performance over time with interactive graphs
+- **Time range filters** - View data from last week, month, year, or all time
 
-Note: This will impact Vite dev & build performances.
+### 📱 Mobile-First Design
+- **Responsive layout** - Works seamlessly on all screen sizes
+- **Touch-optimized** - Large buttons and intuitive navigation
+- **Collapsible sections** - Keep the interface clean on mobile
+- **Horizontal table scrolling** - View all test data on small screens
 
-## Expanding the ESLint configuration
+### 🎮 Gamification & Engagement
+- **Achievement system** - Unlock badges for first test, high scores, etc.
+- **High score tracking** - 5-day rolling window for personal bests
+- **Celebration popups** - Animated celebrations for achievements
+- **Shareable result cards** - Share your speed test results as images
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 📡 Advanced Network Tools
+- **Live ping scanner** - Find the best signal spot by walking around
+- **Network type detection** - Auto-detects WiFi, Ethernet, Cellular
+- **Server selection** - Choose from multiple test servers
+- **Server warmup** - Ensures accurate first-test results
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### 🔔 Smart Features
+- **Auto monitoring** - Schedule automatic background tests
+- **Health alerts** - Get notified of connection issues based on time patterns
+- **Smart redirect popups** - Contextual tips (high latency, new features, etc.)
+- **Comparison tool** - Compare current results with previous test
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## 🛠️ Tech Stack
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **React 18** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool and dev server
+- **LocalStorage** - Client-side data persistence
+- **Google Gemini API** - AI diagnostics (backend)
+- **Custom hooks** - Modular, reusable logic
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 📦 Installation
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+### Prerequisites
+- Node.js (v16 or higher)
+- npm or yarn
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+### Setup
+
+1. **Clone the repository**
+```bash
+git clone https://github.com/Anshul4321123/Network-Tester-fe
+cd speedlab-frontend
