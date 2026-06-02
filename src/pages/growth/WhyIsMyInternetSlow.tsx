@@ -1,8 +1,9 @@
 // pages/growth/WhyIsMyInternetSlow.tsx
 import { Link } from "react-router-dom";
-
+import { HelmetProvider } from "react-helmet-async";
 export default function WhyIsMyInternetSlow() {
   return (
+    <HelmetProvider>
     <div style={styles.container}>
       <div style={styles.content}>
         <h1 style={styles.h1}>Why Is My Internet So Slow? 🔍</h1>
@@ -114,6 +115,7 @@ export default function WhyIsMyInternetSlow() {
         </div>
       </div>
     </div>
+    </HelmetProvider>
   );
 }
 

@@ -499,8 +499,45 @@ export default function Home() {
   const showSmartInsight = !isTestActive && score !== null;
   const showHealthAlert  = timePattern && !isTestActive;
   const showNetworkInfo  = !isTestActive;
+  const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is a good ping for gaming?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A ping below 50ms is generally considered good for gaming."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is jitter?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Jitter measures fluctuations in network latency."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much internet speed do I need?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Most households are comfortable with 50–100 Mbps for everyday use."
+      }
+    }
+  ]
+};
 
   return (
+<>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{
+        __html: JSON.stringify(faqSchema),
+      }}
+    />
     <div style={getBg()}>
       <div style={{ maxWidth: 600, margin: "0 auto", padding: "clamp(12px,4vw,24px)", display: "flex", flexDirection: "column", gap: 12 }}>
 
@@ -570,7 +607,33 @@ export default function Home() {
         <EnhancedCollapsibleSection sectionKey="advanced" defaultOpen={openSections.advanced || false} onToggle={o => setOpenSections(p => ({ ...p, advanced: o }))}>
           <AdvancedDetails bufferbloat={bufferbloat} history={history} autoRun={autoRun} onAutoRunToggle={() => setAutoRun(!autoRun)} monitorPing={monitorPing} isTabVisible={isTabVisible} isTestActive={isTestActive} download={download} upload={upload} phase={phase} />
         </EnhancedCollapsibleSection>
+        {/* SEO CONTENT START */}
+        <section style={{ padding: "20px 0" }}>
+          <h2>Internet Speed Test</h2>
+          <p>
+            Test your internet speed, ping, jitter, download speed, and upload speed.
+            SpeedLab helps gamers, streamers, and remote workers understand connection quality.
+          </p>
 
+          <h2>What is Ping?</h2>
+          <p>
+            Ping measures latency between your device and a server. Lower ping means
+            faster response times for gaming and video calls.
+          </p>
+
+          <h2>What is Jitter?</h2>
+          <p>
+            Jitter measures variations in latency. High jitter can cause lag,
+            buffering, and poor call quality.
+          </p>
+
+          <h2>How Much Internet Speed Do I Need?</h2>
+          <p>
+            Streaming typically requires 25 Mbps, while competitive gaming benefits
+            from low latency and stable connections.
+          </p>
+        </section>
+        {/* SEO CONTENT END */}
         <FooterMessage />
       </div>
 
@@ -628,5 +691,6 @@ export default function Home() {
         @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
       `}</style>
     </div>
+    </>
   );
 }

@@ -1,8 +1,9 @@
 // pages/growth/WhatIsGoodInternetSpeed.tsx
 import { Link } from "react-router-dom";
-
+import { HelmetProvider } from "react-helmet-async";
 export default function WhatIsGoodInternetSpeed() {
   return (
+    <HelmetProvider>
     <div style={styles.container}>
       <div style={styles.content}>
         <h1 style={styles.h1}>What is a Good Internet Speed? ⚡</h1>
@@ -129,6 +130,7 @@ export default function WhatIsGoodInternetSpeed() {
         </div>
       </div>
     </div>
+    </HelmetProvider>
   );
 }
 

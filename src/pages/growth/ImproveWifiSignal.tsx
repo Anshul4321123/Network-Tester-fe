@@ -1,8 +1,9 @@
 // pages/growth/ImproveWifiSignal.tsx
 import { Link } from "react-router-dom";
-
+import { HelmetProvider } from "react-helmet-async";
 export default function ImproveWifiSignal() {
   return (
+    <HelmetProvider>
     <div style={styles.container}>
       <div style={styles.content}>
         <h1 style={styles.h1}>How to Improve WiFi Signal 📶</h1>
@@ -102,6 +103,7 @@ export default function ImproveWifiSignal() {
         </div>
       </div>
     </div>
+    </HelmetProvider>
   );
 }
 

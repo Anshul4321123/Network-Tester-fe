@@ -1,8 +1,9 @@
 // pages/growth/InternetSpeedForGaming.tsx
 import { Link } from "react-router-dom";
-
+import { HelmetProvider } from "react-helmet-async";
 export default function InternetSpeedForGaming() {
   return (
+    <HelmetProvider>
     <div style={styles.container}>
       <div style={styles.content}>
         <h1 style={styles.h1}>Internet Speed for Gaming 🎮</h1>
@@ -87,6 +88,7 @@ export default function InternetSpeedForGaming() {
         </div>
       </div>
     </div>
+    </HelmetProvider>
   );
 }
 

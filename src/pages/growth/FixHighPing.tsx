@@ -1,8 +1,10 @@
 // pages/growth/FixHighPing.tsx
 import { Link } from "react-router-dom";
+import { HelmetProvider } from "react-helmet-async";
 
 export default function FixHighPing() {
   return (
+    <HelmetProvider>
     <div style={styles.container}>
       <div style={styles.content}>
         <h1 style={styles.h1}>How to Fix High Ping 🎯</h1>
@@ -148,6 +150,7 @@ export default function FixHighPing() {
         </div>
       </div>
     </div>
+    </HelmetProvider>
   );
 }
 
